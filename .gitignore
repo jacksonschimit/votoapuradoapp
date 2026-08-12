@@ -1,0 +1,35 @@
+# Dados brutos do TSE (grandes, reproduzíveis via download oficial)
+arquivostse/
+
+# Importador Python
+importador/.env
+importador/__pycache__/
+importador/**/__pycache__/
+importador/.venv/
+importador/venv/
+
+# PostgREST (binário/DLLs específicos do Windows local + config com segredo)
+postgrest/postgrest.exe
+postgrest/*.dll
+postgrest/postgrest.conf
+postgrest/postgrest.zip
+postgrest/vc_redist.x64.exe
+
+# Chaves SSH e outros segredos de infraestrutura
+infra/ssh/locaweb_vps
+infra/ssh/locaweb_vps.pub
+*.pem
+*.key
+
+# Cache local do Supabase CLI (referencia o projeto Supabase antigo,
+# já excluído — nada aqui é útil versionado)
+supabase/.temp/
+
+# Node / build
+node_modules/
+dist/
+dist-ssr/
+
+# Sistema
+.DS_Store
+Thumbs.db
