@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useEleitoradoUf } from '@/hooks/useEleitoradoUf'
 import { useRankingCandidatos } from '@/hooks/useRankingCandidatos'
 import { useMunicipios } from '@/hooks/useMunicipios'
-import { CARGOS, NOMES_CARGO, type Cargo } from '@/types/domain'
+import { CARGOS, NOMES_CARGO, itensDeCargo, type Cargo } from '@/types/domain'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -85,7 +85,7 @@ function MapaCard({ eleicaoId, uf }: { eleicaoId: string; uf: string }) {
               detalhamento. (Seção 4.4)
             </CardDescription>
           </div>
-          <Select value={cargo} onValueChange={(v) => v && setCargo(v as Cargo)}>
+          <Select value={cargo} onValueChange={(v) => v && setCargo(v as Cargo)} items={itensDeCargo(CARGOS)}>
             <SelectTrigger className="w-48">
               <SelectValue />
             </SelectTrigger>
