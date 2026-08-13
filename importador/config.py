@@ -15,4 +15,8 @@ UF_ALVO = "PR"
 ANO_ELEICAO = 2022
 TURNO = 1
 
-CARGOS_ALVO = {"GOVERNADOR", "SENADOR", "DEPUTADO FEDERAL", "DEPUTADO ESTADUAL"}
+CARGOS_ALVO = {"PRESIDENTE", "GOVERNADOR", "SENADOR", "DEPUTADO FEDERAL", "DEPUTADO ESTADUAL"}
+
+# Presidente é candidatura de abrangência nacional — não aparece nos
+# arquivos por UF do TSE, só nos arquivos "_BR" (candidatos e votação).
+CARGOS_NACIONAIS = {"PRESIDENTE"}

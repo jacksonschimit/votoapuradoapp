@@ -2,10 +2,13 @@ import time
 
 import pandas as pd
 
-from config import ARQUIVOS_TSE_DIR, ANO_ELEICAO, UF_ALVO, CARGOS_ALVO
+from config import ARQUIVOS_TSE_DIR, ANO_ELEICAO, UF_ALVO, TURNO, CARGOS_ALVO, CARGOS_NACIONAIS
 from db.connection import get_connection
 
 CSV_PATH = ARQUIVOS_TSE_DIR / "votacao_secao_2022_PR" / f"votacao_secao_{ANO_ELEICAO}_{UF_ALVO}.csv"
+# Presidente vem só no arquivo nacional (todas as UFs misturadas) —
+# filtramos por SG_UF == UF_ALVO ao processar, igual às demais linhas.
+CSV_PATH_NACIONAL = ARQUIVOS_TSE_DIR / "votacao_secao_2022_BR" / f"votacao_secao_{ANO_ELEICAO}_BR.csv"
 
 USECOLS = [
     "SG_UF",
@@ -16,6 +19,7 @@ USECOLS = [
     "DS_CARGO",
     "QT_VOTOS",
     "SQ_CANDIDATO",
+    "NR_TURNO",
 ]
 
 CHUNKSIZE = 200_000
@@ -100,6 +104,20 @@ def _processar_chunk(conn, chunk, eleicao_id, mapas, sigla_uf):
     with conn.cursor() as cur:
         with cur.copy(COPY_SQL) as copy:
             for row in chunk.itertuples(index=False):
+                if row.SG_UF.strip().upper() != sigla_uf:
+                    # relevante só no arquivo nacional (Presidente), que
+                    # traz todas as UFs misturadas.
+                    ignoradas += 1
+                    continue
+
+                if int(row.NR_TURNO) != TURNO:
+                    # relevante só no arquivo nacional: Lula e Bolsonaro
+                    # foram ao 2º turno e aparecem nos dois turnos com o
+                    # mesmo sq_candidato — sem esse filtro, duas linhas
+                    # do mesmo candidato/seção violam o ON CONFLICT.
+                    ignoradas += 1
+                    continue
+
                 cargo = row.DS_CARGO.strip().upper()
                 if cargo not in CARGOS_ALVO:
                     ignoradas += 1
@@ -111,10 +129,17 @@ def _processar_chunk(conn, chunk, eleicao_id, mapas, sigla_uf):
                     ignoradas += 1
                     continue
 
-                cod_municipio_ibge = mapa_tse_ibge[int(row.CD_MUNICIPIO)]
-                zona_id = zona_map[(int(row.NR_ZONA), cod_municipio_ibge)]
-                secao_id = secao_map[(int(row.NR_SECAO), zona_id)]
-                local_votacao_id = local_map[(int(row.NR_LOCAL_VOTACAO), zona_id)]
+                cod_municipio_ibge = mapa_tse_ibge.get(int(row.CD_MUNICIPIO))
+                zona_id = zona_map.get((int(row.NR_ZONA), cod_municipio_ibge)) if cod_municipio_ibge else None
+                secao_id = secao_map.get((int(row.NR_SECAO), zona_id)) if zona_id else None
+                local_votacao_id = local_map.get((int(row.NR_LOCAL_VOTACAO), zona_id)) if zona_id else None
+
+                if secao_id is None or local_votacao_id is None:
+                    # linha referencia geografia não vista no arquivo por
+                    # UF usado para montar os mapas — não deveria
+                    # acontecer, mas não trava a carga por uma linha só.
+                    ignoradas += 1
+                    continue
 
                 copy.write_row(
                     (
@@ -137,25 +162,18 @@ def _processar_chunk(conn, chunk, eleicao_id, mapas, sigla_uf):
     return copiadas, ignoradas
 
 
-def carregar_votacao_secao(conn, eleicao_id: int, mapas: dict):
-    sigla_uf = UF_ALVO
-    total_lidas = 0
-    total_copiadas = 0
-    total_ignoradas = 0
-
-    _fechar_silenciosamente(conn)
-    conn = _garantir_sessao_pronta(conn)
-
-    for numero_chunk, chunk in enumerate(
-        pd.read_csv(CSV_PATH, sep=";", encoding="latin-1", usecols=USECOLS, dtype=str, chunksize=CHUNKSIZE),
-        start=1,
+def _processar_arquivo(conn, caminho, eleicao_id, mapas, sigla_uf, totais, numero_chunk_inicial):
+    numero_chunk = numero_chunk_inicial
+    for chunk in pd.read_csv(
+        caminho, sep=";", encoding="latin-1", usecols=USECOLS, dtype=str, chunksize=CHUNKSIZE
     ):
-        total_lidas += len(chunk)
+        numero_chunk += 1
+        totais["lidas"] += len(chunk)
         for tentativa in range(1, MAX_TENTATIVAS + 1):
             try:
                 copiadas, ignoradas = _processar_chunk(conn, chunk, eleicao_id, mapas, sigla_uf)
-                total_copiadas += copiadas
-                total_ignoradas += ignoradas
+                totais["copiadas"] += copiadas
+                totais["ignoradas"] += ignoradas
                 break
             except Exception as exc:
                 print(f"   chunk {numero_chunk} falhou (tentativa {tentativa}): {exc!r}")
@@ -167,11 +185,28 @@ def carregar_votacao_secao(conn, eleicao_id: int, mapas: dict):
                 time.sleep(espera)
                 conn = _garantir_sessao_pronta(conn)
 
-        print(f"   chunk {numero_chunk}: {total_lidas} linhas lidas até agora ({total_copiadas} copiadas)")
+        print(f"   chunk {numero_chunk} ({caminho.name}): {totais['lidas']} linhas lidas até agora ({totais['copiadas']} copiadas)")
+
+    return conn, numero_chunk
+
+
+def carregar_votacao_secao(conn, eleicao_id: int, mapas: dict):
+    sigla_uf = UF_ALVO
+    totais = {"lidas": 0, "copiadas": 0, "ignoradas": 0}
+
+    _fechar_silenciosamente(conn)
+    conn = _garantir_sessao_pronta(conn)
+
+    conn, ultimo_chunk = _processar_arquivo(conn, CSV_PATH, eleicao_id, mapas, sigla_uf, totais, 0)
+
+    if CARGOS_NACIONAIS & CARGOS_ALVO:
+        conn, _ = _processar_arquivo(
+            conn, CSV_PATH_NACIONAL, eleicao_id, mapas, sigla_uf, totais, ultimo_chunk
+        )
 
     resultado = {
-        "linhas_lidas": total_lidas,
-        "linhas_copiadas_staging": total_copiadas,
-        "linhas_ignoradas_sem_candidato": total_ignoradas,
+        "linhas_lidas": totais["lidas"],
+        "linhas_copiadas_staging": totais["copiadas"],
+        "linhas_ignoradas_sem_candidato": totais["ignoradas"],
     }
     return resultado, conn
