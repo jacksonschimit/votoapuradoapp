@@ -1,6 +1,6 @@
 import { useEleicoes } from '@/hooks/useEleicoes'
 import { useAppStore } from '@/store/useAppStore'
-import { CARGOS_POR_TIPO_ELEICAO, NOMES_CARGO, type Turno } from '@/types/domain'
+import { CARGOS_POR_TIPO_ELEICAO, NOMES_CARGO, itensDeCargo, type Turno } from '@/types/domain'
 import {
   Select,
   SelectContent,
@@ -51,6 +51,7 @@ export function AnalysisContextBar({ habilitado }: AnalysisContextBarProps) {
       <Select
         value={eleicaoId ? String(eleicaoId) : null}
         onValueChange={(valor) => setEleicao(valor ? Number(valor) : null)}
+        items={Object.fromEntries((eleicoes ?? []).map((e) => [String(e.id), String(e.ano)]))}
       >
         <SelectTrigger className="w-40">
           <SelectValue placeholder="Eleição" />
@@ -68,6 +69,7 @@ export function AnalysisContextBar({ habilitado }: AnalysisContextBarProps) {
         value={turno ? String(turno) : null}
         onValueChange={(valor) => setTurno(valor ? (Number(valor) as Turno) : null)}
         disabled={!eleicaoId}
+        items={{ '1': '1º Turno', '2': '2º Turno' }}
       >
         <SelectTrigger className="w-32">
           <SelectValue placeholder="Turno" />
@@ -78,7 +80,12 @@ export function AnalysisContextBar({ habilitado }: AnalysisContextBarProps) {
         </SelectContent>
       </Select>
 
-      <Select value={cargo} onValueChange={(valor) => setCargo(valor as typeof cargo)} disabled={!eleicaoId}>
+      <Select
+        value={cargo}
+        onValueChange={(valor) => setCargo(valor as typeof cargo)}
+        disabled={!eleicaoId}
+        items={itensDeCargo(cargosDisponiveis)}
+      >
         <SelectTrigger className="w-44">
           <SelectValue placeholder="Cargo" />
         </SelectTrigger>

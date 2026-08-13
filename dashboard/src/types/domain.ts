@@ -63,6 +63,15 @@ export const NOMES_CARGO: Record<Cargo, string> = {
   VEREADOR: 'Vereador',
 }
 
+// Nesta versão do @base-ui/react, <Select.Value> só resolve o rótulo
+// do item selecionado se o <Select.Root> receber a prop `items`
+// explicitamente — sem isso, ele exibe o value cru (ex.: "GOVERNADOR"
+// em vez de "Governador"). Helper para não repetir esse
+// Object.fromEntries em cada tela que tem um select de cargo.
+export function itensDeCargo(cargos: readonly Cargo[]): Record<string, string> {
+  return Object.fromEntries(cargos.map((c) => [c, NOMES_CARGO[c]]))
+}
+
 export interface EleitoradoUf {
   eleicao_id: number
   sigla_uf: string

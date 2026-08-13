@@ -36,6 +36,7 @@ export function CandidateSelector({
       value={candidatoId ? String(candidatoId) : null}
       onValueChange={(valor) => onChange(valor ? Number(valor) : null)}
       disabled={!cargo || isLoading}
+      items={Object.fromEntries((candidatos ?? []).map((c) => [String(c.sqCandidato), c.nome]))}
     >
       <SelectTrigger className={className}>
         <SelectValue placeholder={isLoading ? 'Carregando...' : 'Candidato'} />

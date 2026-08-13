@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { CARGOS, NOMES_CARGO, type Cargo } from '@/types/domain'
+import { CARGOS, NOMES_CARGO, itensDeCargo, type Cargo } from '@/types/domain'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
@@ -26,7 +26,11 @@ export function RankingCandidatosTabs({ cargos = CARGOS, children }: RankingCand
   if (isMobile) {
     return (
       <div className="space-y-4">
-        <Select value={cargoMobile} onValueChange={(v) => v && setCargoMobile(v as Cargo)}>
+        <Select
+          value={cargoMobile}
+          onValueChange={(v) => v && setCargoMobile(v as Cargo)}
+          items={itensDeCargo(cargos)}
+        >
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>

@@ -54,7 +54,11 @@ export function AppHeader() {
 
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
         {mostrarSeletorEleicao && eleicoes && eleicoes.length > 0 && (
-          <Select value={params.eleicaoId} onValueChange={trocarEleicao}>
+          <Select
+            value={params.eleicaoId}
+            onValueChange={trocarEleicao}
+            items={Object.fromEntries(eleicoes.map((e) => [String(e.id), e.descricao]))}
+          >
             <SelectTrigger className="w-32 sm:w-56">
               <SelectValue placeholder="Eleição" />
             </SelectTrigger>
