@@ -19,20 +19,48 @@ export interface UsuarioPermissao {
   concedido_por: string | null
 }
 
-export const CARGOS = [
+// Cargos de eleições Gerais e Municipais existentes no cargo_enum do
+// banco (TSE_APP_ARCHITECTURE.md §2.5). Presidente e os cargos
+// municipais já são candidatura válida no schema — expostos aqui
+// mesmo antes de haver dado municipal importado, para que o front
+// não precise ser retocado quando esse dado chegar (doc 01 §8).
+export const CARGOS_GERAL = [
+  'PRESIDENTE',
   'GOVERNADOR',
   'SENADOR',
   'DEPUTADO FEDERAL',
   'DEPUTADO ESTADUAL',
 ] as const
 
-export type Cargo = (typeof CARGOS)[number]
+export const CARGOS_MUNICIPAL = ['PREFEITO', 'VICE-PREFEITO', 'VEREADOR'] as const
+
+// Cargos de candidatura nacional — candidatos.sigla_uf = 'BR' para
+// esses (ver adendo do TSE_APP_ARCHITECTURE.md §7.2), então consultas
+// que filtram candidato por UF precisam ignorar esse filtro aqui.
+export const CARGOS_NACIONAIS = ['PRESIDENTE'] as const
+
+export const CARGOS_POR_TIPO_ELEICAO = {
+  GERAL: CARGOS_GERAL,
+  MUNICIPAL: CARGOS_MUNICIPAL,
+} as const
+
+// Mantido como alias das eleições Gerais — é o único tipo com dado
+// importado até agora, e é o que as telas existentes (Visão Geral,
+// Seção) já consomem via este nome.
+export const CARGOS = CARGOS_GERAL
+
+export type Cargo = (typeof CARGOS_GERAL)[number] | (typeof CARGOS_MUNICIPAL)[number]
+export type Turno = 1 | 2
 
 export const NOMES_CARGO: Record<Cargo, string> = {
+  PRESIDENTE: 'Presidente',
   GOVERNADOR: 'Governador',
   SENADOR: 'Senador',
   'DEPUTADO FEDERAL': 'Deputado Federal',
   'DEPUTADO ESTADUAL': 'Deputado Estadual',
+  PREFEITO: 'Prefeito',
+  'VICE-PREFEITO': 'Vice-Prefeito',
+  VEREADOR: 'Vereador',
 }
 
 export interface EleitoradoUf {
