@@ -1,9 +1,12 @@
 import csv
 
-from config import ARQUIVOS_TSE_DIR, ANO_ELEICAO, UF_ALVO, CARGOS_ALVO
+from config import ARQUIVOS_TSE_DIR, ANO_ELEICAO, UF_ALVO, CARGOS_ALVO, CARGOS_NACIONAIS
 from loaders.util import tse_null
 
 CSV_PATH = ARQUIVOS_TSE_DIR / "consulta_cand_2022" / f"consulta_cand_{ANO_ELEICAO}_{UF_ALVO}.csv"
+# Presidente (candidatura nacional) só existe no arquivo BR, com
+# sigla_uf = 'BR' — já seedado em public.uf especificamente para isso.
+CSV_PATH_NACIONAL = ARQUIVOS_TSE_DIR / "consulta_cand_2022" / f"consulta_cand_{ANO_ELEICAO}_BR.csv"
 
 INSERT_SQL = """
     insert into public.candidatos (
@@ -27,13 +30,13 @@ INSERT_SQL = """
 """
 
 
-def carregar_candidatos(conn, eleicao_id: int) -> int:
+def _ler_candidatos(caminho, eleicao_id: int, cargos_permitidos: set[str]) -> list[dict]:
     registros = []
-    with open(CSV_PATH, encoding="latin-1", newline="") as f:
+    with open(caminho, encoding="latin-1", newline="") as f:
         reader = csv.DictReader(f, delimiter=";")
         for row in reader:
             cargo = row["DS_CARGO"].strip().upper()
-            if cargo not in CARGOS_ALVO:
+            if cargo not in cargos_permitidos:
                 continue
             registros.append(
                 {
@@ -57,6 +60,15 @@ def carregar_candidatos(conn, eleicao_id: int) -> int:
                     "ocupacao": tse_null(row["DS_OCUPACAO"]),
                 }
             )
+    return registros
+
+
+def carregar_candidatos(conn, eleicao_id: int) -> int:
+    cargos_uf = CARGOS_ALVO - CARGOS_NACIONAIS
+    registros = _ler_candidatos(CSV_PATH, eleicao_id, cargos_uf)
+
+    if CARGOS_NACIONAIS & CARGOS_ALVO:
+        registros += _ler_candidatos(CSV_PATH_NACIONAL, eleicao_id, CARGOS_NACIONAIS)
 
     with conn.cursor() as cur:
         cur.executemany(INSERT_SQL, registros)
