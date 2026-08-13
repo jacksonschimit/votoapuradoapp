@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -84,14 +85,16 @@ export function AppHeader() {
               }
             />
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel className="max-w-48 truncate font-normal text-muted-foreground">
-                {session.user.email}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={sair}>
-                <LogOut />
-                Sair
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="max-w-48 truncate font-normal text-muted-foreground">
+                  {session.user.email}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={sair}>
+                  <LogOut />
+                  Sair
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
