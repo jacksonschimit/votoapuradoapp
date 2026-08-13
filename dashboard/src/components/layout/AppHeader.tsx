@@ -1,8 +1,18 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { LogOut } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { useEleicoes } from '@/hooks/useEleicoes'
 import { supabase } from '@/lib/supabase'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -11,10 +21,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-// Cabeçalho persistente com o "seletor secundário" de eleição
-// descrito na Seção 4.3 — visível sempre que a navegação já tiver
-// um eleicaoId/uf no contexto, permitindo trocar de ciclo sem sair
-// da UF atual.
+// Barra superior: em desktop, a marca já aparece no topo da
+// SidebarNavigation, então aqui ela só reaparece em telas menores
+// (abaixo do breakpoint lg, onde a sidebar vira MobileBottomNavigation).
+// O "seletor secundário" de eleição (Seção 4.3) continua igual —
+// visível sempre que a navegação já tiver um eleicaoId/uf no contexto.
 export function AppHeader() {
   const { session } = useSession()
   const navigate = useNavigate()
@@ -33,13 +44,15 @@ export function AppHeader() {
     navigate('/login')
   }
 
+  const iniciais = session?.user.email?.slice(0, 2).toUpperCase() ?? '?'
+
   return (
     <header className="flex items-center justify-between gap-2 border-b px-3 py-3 sm:gap-4 sm:px-4">
-      <Link to="/dashboard" className="shrink-0 text-sm font-semibold sm:text-base">
+      <Link to="/dashboard" className="shrink-0 text-sm font-semibold sm:text-base lg:hidden">
         VotoApurado
       </Link>
 
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
         {mostrarSeletorEleicao && eleicoes && eleicoes.length > 0 && (
           <Select value={params.eleicaoId} onValueChange={trocarEleicao}>
             <SelectTrigger className="w-32 sm:w-56">
@@ -56,14 +69,27 @@ export function AppHeader() {
         )}
 
         {session ? (
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm text-muted-foreground sm:inline">
-              {session.user.email}
-            </span>
-            <Button variant="ghost" size="sm" onClick={sair}>
-              Sair
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon" className="rounded-full">
+                  <Avatar className="size-7">
+                    <AvatarFallback className="text-xs">{iniciais}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel className="max-w-48 truncate font-normal text-muted-foreground">
+                {session.user.email}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={sair}>
+                <LogOut />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <Link to="/login" className={buttonVariants({ size: 'sm' })}>
             Entrar
