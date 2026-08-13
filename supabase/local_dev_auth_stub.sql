@@ -1,6 +1,6 @@
 -- ============================================================
 -- Uso local (dev) apenas. Desde a migration
--- 20260812024148_split_auth_de_dados.sql, os roles
+-- 20260811225117_auth_roles_and_functions.sql, os roles
 -- (anon/authenticated/service_role) e a função auth.uid() já são
 -- parte real e versionada do schema (necessários em qualquer
 -- ambiente onde o PostgREST rodar, local ou produção).

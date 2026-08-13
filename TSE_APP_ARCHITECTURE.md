@@ -889,3 +889,140 @@ alter table public.log_importacoes enable row level security;
 ## 6. CONSIDERAÇÕES FINAIS DE ARQUITETURA (v2.0)
 
 As quatro revisões incorporadas nesta versão são estruturalmente coerentes entre si: a generalização multieleitoral (Seção 1.2/2.3) só é operacionalmente viável porque o backoffice deixou de depender de execução manual local e passou a ser um serviço web (Seção 3) que qualquer administrador pode acionar remotamente sempre que um novo ciclo precisar ser importado; o modelo multiusuário com Google OAuth (Seção 5.2-5.3) é o que torna seguro expor esse backoffice na internet, já que a superfície de ataque adicional é compensada por autenticação federada robusta e checagem explícita de papel; e a separação entre Local de Votação e Seção Eleitoral (Seção 2.4) não é apenas uma correção de modelagem, mas a base que viabiliza a análise de currais eleitorais em três granularidades simultâneas (Zona, Local, Seção) exigida pela Seção 4.6, sem duplicação de dado geográfico e sem perda de performance nas consultas do dashboard.
+
+---
+
+## 7. ADENDO — ARQUITETURA REALMENTE IMPLEMENTADA (DIVERGÊNCIAS EM RELAÇÃO A ESTE PRD)
+
+> **Nota de manutenção:** as Seções 1 a 6 acima são o **PRD original (v2.0)** e são mantidas intactas como registro do requisito de origem e das intenções de produto. Esta Seção 7 é um **adendo vivo**, atualizado à medida que decisões técnicas reais divergiram do PRD durante a implementação — por restrição de custo, por descoberta técnica em campo, ou por escolha deliberada do time. Onde este adendo contradiz uma seção anterior, **o adendo reflete o que está de fato em produção**; o texto original permanece como referência histórica do requisito, não como documentação do estado atual.
+
+### 7.1 Resumo das Divergências
+
+| Tema | PRD Original (Seções 1-6) | Implementação Real |
+|---|---|---|
+| Hospedagem do banco | Supabase gerenciado (Postgres + Auth + Storage) único | **Split**: Supabase (free tier) só para Auth; Postgres autohospedado numa VPS própria |
+| Camada de API de dados | `@supabase/supabase-js` direto ao Postgres do Supabase | **PostgREST autohospedado** na mesma VPS, na frente de um Postgres próprio |
+| Backoffice/importador | Serviço web FastAPI + fila Redis/`arq`, hospedado em nuvem, acessível remotamente | **Script Python local** (`importador/`), rodado manualmente na máquina de desenvolvimento, lendo CSVs do TSE do disco local |
+| `auth.users` / `auth.uid()` | Nativo do Supabase, disponível diretamente no Postgres de dados | **Recriado manualmente**: schema `auth` próprio no Postgres de dados, com `auth.uid()`/`auth.role()` lendo claims do JWT repassado pelo PostgREST |
+| RLS em materialized views | Não discutido no PRD (assume RLS nativo em tudo) | **Não suportado pelo Postgres** para mat views — padrão próprio de REVOKE + view wrapper com `WHERE EXISTS` (Seção 7.5) |
+| Login Google | Especificado desde a V1 (Seção 4.2, 5.2) | **Ainda não configurado** — pendente (passo 3 do roadmap de produção) |
+| Escopo de dados importado | "Agnóstico a ciclo eleitoral", qualquer UF | Só **2022, 1º turno**, UFs **PR, SC, RS** (PR completo e testado; SC/RS pendentes de importação) |
+| Ambiente de produção | Não especificado (assume nuvem gerenciada) | **VPS própria (Locaweb, Ubuntu 24.04)**, Nginx + Let's Encrypt, systemd, deploy via Git |
+| Fluxo de deploy | Não especificado | `dev` → `main` via **Pull Request obrigatório** (GitHub Ruleset), repositório público |
+| Provedor de mapa | `react-leaflet / mapbox-gl`, sem detalhar tile provider | **OpenStreetMap público** (tiles lentos, avaliação de MapTiler/Stadia Maps pendente) |
+
+### 7.2 Motivação da Divergência Central: Split Auth/Dados
+
+O Supabase gerenciado foi abandonado como banco de dados de produção após o projeto esbarrar no limite de armazenamento do free tier (500MB), que tornou o projeto somente-leitura. Migrar para um plano pago do Supabase foi descartado por custo. A decisão adotada foi:
+
+- **Manter o Supabase (free tier) exclusivamente como provedor de identidade** (Auth/GoTrue) — é o único componente do Supabase ainda em uso, responsável por emitir os JWTs de sessão (login Google e e-mail/senha, conforme Seção 5.2 original).
+- **Autohospedar o Postgres de dados** numa VPS própria (Locaweb), eliminando o limite de armazenamento pago por GB do Supabase.
+- **Autohospedar o PostgREST** na mesma VPS, na frente desse Postgres, reproduzindo a camada de API REST + RLS que o app cliente (Seção 4.1) espera — o front-end continua fazendo requisições REST/RLS-aware, só que contra um endpoint próprio (`/api`) em vez do endpoint gerenciado do Supabase.
+
+Como o Postgres de dados nunca teve uma tabela `auth.users` real (essa tabela só existe no projeto Supabase, que agora só guarda identidade, não dados), foi necessário recriar manualmente, via migração, um schema `auth` mínimo no banco de dados:
+
+```sql
+create schema auth;
+
+create role anon nologin;
+create role authenticated nologin;
+create role service_role nologin bypassrls;
+create role authenticator noinherit login password '<gerada via openssl rand -hex 24>';
+grant anon, authenticated, service_role to authenticator;
+
+create function auth.uid() returns uuid as $$
+    select nullif(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+$$ language sql stable;
+
+create function auth.role() returns text as $$
+    select nullif(current_setting('request.jwt.claims', true)::json->>'role', '');
+$$ language sql stable;
+```
+
+Essa migração (`20260811225117_auth_roles_and_functions.sql`) precisa rodar **antes** de qualquer migração que crie política de RLS — é uma dependência de ordem que não existe no modelo original do PRD (onde `auth.users`/`auth.uid()` já vêm prontos do Supabase) e que já causou um bug real de ordenação, corrigido durante o desenvolvimento.
+
+Consequência prática para a Seção 5.1 (tabela de chaves): a linha do "App Cliente" continua válida em espírito (RLS obrigatório, chave não-privilegiada no navegador), mas a "Anon Key" do Supabase foi substituída pelo par JWT do Supabase Auth + role `anon`/`authenticated` do Postgres próprio, validados pelo PostgREST via JWKS (endpoint público `https://<projeto>.supabase.co/auth/v1/.well-known/jwks.json`, algoritmo ES256) em vez do segredo HS256 legado.
+
+### 7.3 Backoffice/Importador: Script Local, Não Serviço Web
+
+A arquitetura de backoffice como serviço FastAPI + fila `arq`/Redis (Seção 3 completa do PRD original) **não foi implementada**. Em seu lugar, a Etapa 2 do projeto entregou um **importador Python local** (`importador/`), executado manualmente pelo desenvolvedor, que:
+
+- Lê os CSVs do TSE diretamente do disco local (`arquivostse/`, fora do controle de versão), sem upload via HTTP.
+- Usa `psycopg[binary]` (psycopg3) em vez de `psycopg2-binary` — `psycopg2` não tem wheel pré-compilada para Python 3.14, versão usada no ambiente de desenvolvimento.
+- Processa em chunks e usa `COPY`/staging table, conforme a lógica descrita na Seção 3.5 do PRD original — essa parte da lógica *foi* reaproveitada como projetada.
+- Não tem autenticação, fila assíncrona, nem interface administrativa web — é invocado via `main.py` na linha de comando.
+
+Não há, portanto, endpoint `/api/importacoes/upload` nem middleware `exigir_admin` (Seção 3.3-3.4) em produção. Reimportar ou importar um novo ciclo eleitoral hoje exige acesso à máquina de desenvolvimento e execução manual do script — não é uma operação remota como o PRD original previa. Essa é uma lacuna conhecida em relação ao requisito original, não uma decisão definitiva; fica registrada aqui para retomada futura caso o produto avance para operação com múltiplos administradores remotos.
+
+### 7.4 Row Level Security em Materialized Views: Padrão REVOKE + View Wrapper
+
+O PRD original (Seção 2.7 e 5.4) assume que RLS se aplica uniformemente a qualquer objeto do banco. Na prática, o Postgres **não permite `ENABLE ROW LEVEL SECURITY` em materialized views** — apenas em tabelas e views comuns. Isso afeta diretamente as materialized views de resultado (`mv_resultado_candidato_{municipio,local,uf}`, Seção 2.7) e a nova `mv_dominancia_municipio` (Seção 7.6), que concentram dados de todas as UFs/eleições e por isso não podem ser expostas cruas para os roles `anon`/`authenticated`.
+
+Foi descoberta ainda uma segunda armadilha: mesmo criando uma **view comum** por cima da materialized view com a checagem de permissão manual, se essa view for dona do role `postgres` (que tem `BYPASSRLS`), a checagem é ignorada — RLS de uma view só é avaliado com os privilégios do dono da view, não de quem a consulta, a menos que a view seja marcada `security_invoker = true`. E aqui mora a segunda pegadinha, oposta e igualmente crítica: se essa mesma view wrapper for marcada `security_invoker = true`, ela deixa de conseguir ler a materialized view por baixo (que teve o acesso direto revogado de `anon`/`authenticated`), porque a semântica de "invoker" se aplica à consulta inteira, não só à cláusula de filtro.
+
+O padrão adotado, replicado em toda materialized view sensível, é:
+
+```sql
+-- 1. Revoga acesso direto à materialized view dos roles públicos
+revoke select on public.mv_exemplo from anon, authenticated;
+
+-- 2. Cria uma view comum, SEM security_invoker, que roda com o
+--    privilégio do dono (consegue ler a mat view revogada) mas
+--    replica manualmente a mesma checagem de usuarios_permissoes
+--    que uma política de RLS faria — auth.uid() sempre lê o JWT
+--    da requisição atual, independente de qual role executa a query.
+create view public.vw_exemplo as
+select mv.*
+from public.mv_exemplo mv
+where exists (
+    select 1 from public.usuarios_permissoes up
+    where up.user_id = auth.uid()
+      and (up.sigla_uf is null or up.sigla_uf = mv.sigla_uf)
+      and (up.eleicao_id is null or up.eleicao_id = mv.eleicao_id)
+);
+```
+
+O front-end e o PostgREST consomem exclusivamente as views `vw_*`, nunca as `mv_*` diretamente (que retornam `PGRST205`/404 para `anon`/`authenticated` por design).
+
+### 7.5 Infraestrutura de Produção
+
+Diferente do "não especificado" do PRD original, o ambiente de produção efetivo é:
+
+- **VPS Locaweb**, Ubuntu 24.04 LTS, provisionada via cloud-init, acesso exclusivamente por chave SSH dedicada (sem senha).
+- **PostgreSQL 17** (repositório oficial PGDG), banco `votoapurado`, populado via `pg_dump`/`restore` a partir do ambiente local de desenvolvimento.
+- **PostgREST** autohospedado como serviço `systemd` (`postgrest.service`), rodando como usuário de sistema dedicado (não-root), `ProtectSystem=strict`, escutando em `127.0.0.1:3001` (não exposto diretamente à internet).
+- **Nginx** como reverse proxy: serve o build estático da dashboard React (`dashboard/dist`) na raiz do domínio, e faz proxy de `/api/` → `http://127.0.0.1:3001/`.
+- **HTTPS via Let's Encrypt/certbot**, domínio `votoapurado.flygestao.com.br` (subdomínio de um domínio corporativo já existente do usuário, escolhido como solução provisória de baixo custo — trocável no futuro sem impacto estrutural).
+- **`ufw` + `fail2ban`** para hardening básico de borda.
+
+O ambiente local de desenvolvimento do usuário é tratado como DEV; a VPS Locaweb é PRODUÇÃO. Não há, até o momento, um ambiente de staging intermediário.
+
+### 7.6 Fluxo de Deploy e Controle de Mudanças
+
+Não especificado no PRD original. O fluxo adotado:
+
+- Repositório Git **público** no GitHub (escolha deliberada — contas pessoais não suportam branch protection em repositório privado sem plano pago).
+- Branch `dev` para trabalho corrente; branch `main` como espelho exato de produção.
+- **GitHub Ruleset** na branch `main` exigindo Pull Request antes de qualquer merge (sem push direto), com enforcement ativado.
+- Migrações SQL (`supabase/migrations/`) são a fonte da verdade do schema, aplicadas manualmente tanto no Postgres local quanto no da VPS (via `scp` + `psql -f`) até que este processo seja automatizado.
+
+### 7.7 Correções de Performance Pós-Lançamento (Não Previstas no PRD)
+
+Após a validação inicial de produção, três gargalos de performance foram identificados e corrigidos nas views de dominância da Seção 2.8/4.6 — o PRD original não antecipa índices específicos para essas views:
+
+- `idx_votacao_cargo_eleicao_uf` — índice líder por `cargo` em `votacao_secao`, usado pelas 4 views de dominância e pelo mapa coroplético (eliminou Seq Scan de ~900 mil linhas por partição; consultas de ~1,8-3s para Index Only Scan).
+- `mv_dominancia_municipio` — a `vw_dominancia_municipio` (Seção 2.8, adicionada como extensão do PRD para cobrir o nível Município, ausente na especificação original que só cobria Seção/Local/Zona) foi convertida em materialized view, seguindo o mesmo padrão de segurança da Seção 7.5, já que o resultado eleitoral não muda após a importação.
+- `idx_votacao_secao_id` — índice líder por `secao_id` isolado, necessário porque `vw_dominancia_secao` filtra apenas por seção (sem `cargo`), e nenhum índice composto existente tinha `secao_id` como coluna líder (13,4s → ~2ms).
+
+### 7.8 Stack Front-end: Detalhe de Implementação
+
+A Seção 4.1 do PRD original lista `shadcn/ui` sem especificar a biblioteca de primitivos por baixo. A versão do `shadcn/ui` usada no projeto é construída sobre **`@base-ui/react`**, não Radix UI (a base histórica do shadcn/ui) — isso muda alguns contratos de API usados no código: `Button` não aceita a prop `asChild` (usa-se `buttonVariants()` diretamente em elementos como `<Link>`), e o callback `onValueChange` de `Select` recebe `(value: string | null, details)` em vez de só `(value: string)`.
+
+### 7.9 Itens do PRD Original Ainda Pendentes
+
+- **Login via Google (Seção 4.2, 5.2):** schema e política de RLS já preparados para múltiplos usuários; o provedor OAuth do Google ainda não foi configurado no projeto Supabase Auth. Passo 3 do roadmap corrente.
+- **Backoffice web remoto (Seção 3):** permanece como script local, sem endpoints HTTP nem fila assíncrona — ver Seção 7.3.
+- **Importação de SC e RS:** schema e importador já suportam múltiplas UFs (validado com PR); dados de SC/RS ainda não foram carregados, o que limita a Tela de Comparativo Histórico (Seção 4.7) a um recorte parcial.
+- **Ciclos eleitorais além de 2022:** nenhum outro ano foi importado ainda, então a Tela de Comparativo Histórico ainda não tem série temporal real para exibir.
+- **Provedor de tiles do mapa:** OpenStreetMap público em uso, com lentidão de carregamento observada; avaliação de MapTiler/Stadia Maps como alternativa paga fica para depois do login Google (passo 4 do roadmap).
+- **Exportação de relatórios CSV/PDF (Seção 1.5):** não implementada.

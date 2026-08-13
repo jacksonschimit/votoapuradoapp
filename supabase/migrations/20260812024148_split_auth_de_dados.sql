@@ -8,48 +8,14 @@
 --
 -- Isso exige que este banco NUNCA dependa de uma tabela real
 -- auth.users (que passa a existir só no projeto Supabase de
--- autenticação, em outro banco). Mas o schema `auth`, os roles
--- (anon/authenticated/service_role) e a função auth.uid() são
--- infraestrutura real do PostgREST — precisam existir em
--- qualquer ambiente (local ou produção) onde o PostgREST rodar.
+-- autenticação, em outro banco).
+--
+-- Os roles (anon/authenticated/service_role) e as funções
+-- auth.uid()/auth.role() foram movidos para a migration
+-- 20260811225117_auth_roles_and_functions.sql, bem mais cedo na
+-- sequência — as políticas RLS das tabelas criadas logo em seguida
+-- já dependem de "to authenticated" e auth.uid() existirem.
 -- ============================================================
-
-create schema if not exists auth;
-
-do $$
-begin
-    if not exists (select 1 from pg_roles where rolname = 'anon') then
-        create role anon nologin;
-    end if;
-    if not exists (select 1 from pg_roles where rolname = 'authenticated') then
-        create role authenticated nologin;
-    end if;
-    if not exists (select 1 from pg_roles where rolname = 'service_role') then
-        create role service_role nologin bypassrls;
-    end if;
-end
-$$;
-
--- Lê o usuário autenticado a partir dos claims do JWT que o
--- PostgREST valida e expõe via a GUC "request.jwt.claims" —
--- mesmo mecanismo usado internamente pelo Supabase.
-create or replace function auth.uid() returns uuid
-    language sql stable
-    as $$
-    select nullif(
-        current_setting('request.jwt.claims', true)::jsonb ->> 'sub',
-        ''
-    )::uuid
-$$;
-
-create or replace function auth.role() returns text
-    language sql stable
-    as $$
-    select nullif(
-        current_setting('request.jwt.claims', true)::jsonb ->> 'role',
-        ''
-    )
-$$;
 
 -- Remove o trigger/função de auto-criação de usuarios_perfil, que
 -- dependia de auth.users estar na mesma base (não é mais o caso).
