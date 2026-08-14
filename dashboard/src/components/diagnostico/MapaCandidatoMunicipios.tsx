@@ -5,6 +5,7 @@ import type { Layer, PathOptions } from 'leaflet'
 import type { Feature } from 'geojson'
 import { useDominanciaCandidatoMunicipio } from '@/hooks/useDominanciaCandidatoMunicipio'
 import { corToken } from '@/lib/theme'
+import { MAPTILER_ATTRIBUTION, MAPTILER_TILE_URL } from '@/lib/mapTiles'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
@@ -92,10 +93,7 @@ export function MapaCandidatoMunicipios({ eleicaoId, uf, sqCandidato }: MapaCand
         scrollWheelZoom={false}
         style={{ height: 420, width: '100%', borderRadius: 8 }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <TileLayer attribution={MAPTILER_ATTRIBUTION} url={MAPTILER_TILE_URL} />
         {geojson && <GeoJSON data={geojson} style={estiloFeature} onEachFeature={aoCarregarFeature} />}
       </MapContainer>
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">

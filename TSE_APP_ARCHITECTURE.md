@@ -905,11 +905,11 @@ As quatro revisões incorporadas nesta versão são estruturalmente coerentes en
 | Backoffice/importador | Serviço web FastAPI + fila Redis/`arq`, hospedado em nuvem, acessível remotamente | **Script Python local** (`importador/`), rodado manualmente na máquina de desenvolvimento, lendo CSVs do TSE do disco local |
 | `auth.users` / `auth.uid()` | Nativo do Supabase, disponível diretamente no Postgres de dados | **Recriado manualmente**: schema `auth` próprio no Postgres de dados, com `auth.uid()`/`auth.role()` lendo claims do JWT repassado pelo PostgREST |
 | RLS em materialized views | Não discutido no PRD (assume RLS nativo em tudo) | **Não suportado pelo Postgres** para mat views — padrão próprio de REVOKE + view wrapper com `WHERE EXISTS` (Seção 7.5) |
-| Login Google | Especificado desde a V1 (Seção 4.2, 5.2) | **Ainda não configurado** — pendente (passo 3 do roadmap de produção) |
-| Escopo de dados importado | "Agnóstico a ciclo eleitoral", qualquer UF | Só **2022, 1º turno**, UFs **PR, SC, RS** (PR completo e testado; SC/RS pendentes de importação) |
+| Login Google | Especificado desde a V1 (Seção 4.2, 5.2) | **Configurado e em produção** (Google Cloud Console + Supabase Auth) |
+| Escopo de dados importado | "Agnóstico a ciclo eleitoral", qualquer UF | **2022, 1º turno**, UFs **PR, SC, RS** (PR completo, incluindo Presidente — Seção 7.2 do adendo original tratava Presidente como candidatura nacional só no arquivo `_BR` do TSE; SC/RS pendentes de importação) |
 | Ambiente de produção | Não especificado (assume nuvem gerenciada) | **VPS própria (Locaweb, Ubuntu 24.04)**, Nginx + Let's Encrypt, systemd, deploy via Git |
-| Fluxo de deploy | Não especificado | `dev` → `main` via **Pull Request obrigatório** (GitHub Ruleset), repositório público |
-| Provedor de mapa | `react-leaflet / mapbox-gl`, sem detalhar tile provider | **OpenStreetMap público** (tiles lentos, avaliação de MapTiler/Stadia Maps pendente) |
+| Fluxo de deploy | Não especificado | `dev` → `main` via **Pull Request obrigatório** (GitHub Ruleset), repositório público, CI (GitHub Actions) rodando tsc+testes+build em todo PR |
+| Provedor de mapa | `react-leaflet / mapbox-gl`, sem detalhar tile provider | **MapTiler** (estilo `dataviz`, raster tiles via `VITE_MAPTILER_KEY`) — trocado do OpenStreetMap público em 2026-08-14 por lentidão/visual genérico |
 
 ### 7.2 Motivação da Divergência Central: Split Auth/Dados
 
@@ -1016,13 +1016,18 @@ Após a validação inicial de produção, três gargalos de performance foram i
 
 ### 7.8 Stack Front-end: Detalhe de Implementação
 
-A Seção 4.1 do PRD original lista `shadcn/ui` sem especificar a biblioteca de primitivos por baixo. A versão do `shadcn/ui` usada no projeto é construída sobre **`@base-ui/react`**, não Radix UI (a base histórica do shadcn/ui) — isso muda alguns contratos de API usados no código: `Button` não aceita a prop `asChild` (usa-se `buttonVariants()` diretamente em elementos como `<Link>`), e o callback `onValueChange` de `Select` recebe `(value: string | null, details)` em vez de só `(value: string)`.
+A Seção 4.1 do PRD original lista `shadcn/ui` sem especificar a biblioteca de primitivos por baixo. A versão do `shadcn/ui` usada no projeto é construída sobre **`@base-ui/react`**, não Radix UI (a base histórica do shadcn/ui) — isso muda alguns contratos de API usados no código, todos descobertos por tentativa/erro ao longo do desenvolvimento:
+
+- `Button` não aceita a prop `asChild` — usa-se `buttonVariants()` diretamente em elementos como `<Link>`.
+- O callback `onValueChange` de `Select` recebe `(value: string | null, details)` em vez de só `(value: string)`.
+- `<Select.Value>`/`<SelectValue>` **não deduz o rótulo a partir dos `<Select.Item>` filhos** — só resolve o texto exibido se `<Select.Root>` receber a prop `items` explícita (`Record<string, ReactNode>` ou array `{value, label}`). Sem isso, mostra o valor cru (`"1"` em vez do nome da eleição). Descoberto em produção, corrigido em todos os selects do projeto — ver `itensDeCargo()` em `types/domain.ts`.
+- `<DropdownMenu.Label>`/`<Menu.GroupLabel>` **exige** estar dentro de um `<Menu.Group>` — usado fora disso, lança exceção assim que o menu abre e, sem error boundary, derruba a árvore React inteira pra tela branca. Também descoberto em produção (menu do usuário).
+- Para busca/filtro de texto num seletor (ex.: candidato, com centenas de opções), o primitivo certo é `Combobox` (`@base-ui/react/combobox`), não `Select` — `Select` não tem input de busca embutido.
 
 ### 7.9 Itens do PRD Original Ainda Pendentes
 
-- **Login via Google (Seção 4.2, 5.2):** schema e política de RLS já preparados para múltiplos usuários; o provedor OAuth do Google ainda não foi configurado no projeto Supabase Auth. Passo 3 do roadmap corrente.
 - **Backoffice web remoto (Seção 3):** permanece como script local, sem endpoints HTTP nem fila assíncrona — ver Seção 7.3.
 - **Importação de SC e RS:** schema e importador já suportam múltiplas UFs (validado com PR); dados de SC/RS ainda não foram carregados, o que limita a Tela de Comparativo Histórico (Seção 4.7) a um recorte parcial.
 - **Ciclos eleitorais além de 2022:** nenhum outro ano foi importado ainda, então a Tela de Comparativo Histórico ainda não tem série temporal real para exibir.
-- **Provedor de tiles do mapa:** OpenStreetMap público em uso, com lentidão de carregamento observada; avaliação de MapTiler/Stadia Maps como alternativa paga fica para depois do login Google (passo 4 do roadmap).
+- **Comparação real entre candidatos (Seção 4.7/doc 02 §8):** o seletor "+ Comparar" já existe e adiciona candidatos como chip ao contexto, mas nenhuma tela ainda usa esses candidatos adicionais para exibir dado comparativo — aguardando o Épico 6 da V1.0 (docs/11), decisão confirmada com o usuário em 2026-08-14.
 - **Exportação de relatórios CSV/PDF (Seção 1.5):** não implementada.
