@@ -266,3 +266,21 @@ export interface ResultadoCandidatoMunicipio {
   nome_municipio: string
   total_votos: number
 }
+
+// Votos válidos totais do cargo (todos os candidatos somados) — base
+// de referência para PT/QL (doc 03 §2, lib/metrics/participacao.ts).
+export interface VotosValidosCargoMunicipio {
+  eleicao_id: number
+  codigo_municipio: number
+  nome_municipio: string
+  sigla_uf: string
+  cargo: Cargo
+  votos_validos: number
+}
+
+export interface VotosValidosCargoUf {
+  eleicao_id: number
+  sigla_uf: string
+  cargo: Cargo
+  votos_validos: number
+}
