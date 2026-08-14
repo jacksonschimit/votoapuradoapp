@@ -3,6 +3,7 @@ import { LogOut } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { useEleicoes } from '@/hooks/useEleicoes'
 import { supabase } from '@/lib/supabase'
+import { useAppStore } from '@/store/useAppStore'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -32,6 +33,7 @@ export function AppHeader() {
   const navigate = useNavigate()
   const params = useParams<{ eleicaoId?: string; uf?: string }>()
   const { data: eleicoes } = useEleicoes(!!session)
+  const resetContexto = useAppStore((s) => s.reset)
 
   const mostrarSeletorEleicao = !!params.eleicaoId && !!params.uf
 
@@ -42,6 +44,10 @@ export function AppHeader() {
 
   async function sair() {
     await supabase.auth.signOut()
+    // Evita que eleição/cargo/candidato escolhidos por um usuário
+    // vazem para a sessão do próximo, caso outra conta faça login no
+    // mesmo navegador.
+    resetContexto()
     navigate('/login')
   }
 
