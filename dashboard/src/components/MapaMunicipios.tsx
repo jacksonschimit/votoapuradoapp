@@ -5,6 +5,7 @@ import type { Layer, PathOptions } from 'leaflet'
 import type { Feature } from 'geojson'
 import { useDominanciaMunicipios, type LiderMunicipio } from '@/hooks/useDominanciaMunicipios'
 import type { Cargo } from '@/types/domain'
+import { MAPTILER_ATTRIBUTION, MAPTILER_TILE_URL } from '@/lib/mapTiles'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
@@ -87,10 +88,7 @@ export function MapaMunicipios({ eleicaoId, uf, cargo }: MapaMunicipiosProps) {
         scrollWheelZoom={false}
         style={{ height: 500, width: '100%', borderRadius: 8 }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <TileLayer attribution={MAPTILER_ATTRIBUTION} url={MAPTILER_TILE_URL} />
         {geojson && (
           <GeoJSON key={cargo} data={geojson} style={estiloFeature} onEachFeature={aoCarregarFeature} />
         )}

@@ -1,12 +1,13 @@
 import { useCandidatosDisponiveis } from '@/hooks/useCandidatosDisponiveis'
 import type { Cargo } from '@/types/domain'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox'
 
 interface CandidateSelectorProps {
   eleicaoId: number | null
@@ -17,9 +18,17 @@ interface CandidateSelectorProps {
   className?: string
 }
 
+interface ItemCandidato {
+  value: number
+  label: string
+}
+
 // Seletor do candidato principal do contexto analítico (doc 04 §3).
-// Fica desabilitado até eleição+cargo estarem definidos — território
-// (UF) só é obrigatório para cargos não-nacionais, ver
+// Usa Combobox (busca por texto) em vez de Select — cargos como
+// Deputado Federal/Estadual chegam a 900+ candidatos, inviável de
+// navegar só rolando uma lista (feedback do usuário testando em
+// produção). Fica desabilitado até eleição+cargo estarem definidos —
+// território (UF) só é obrigatório para cargos não-nacionais, ver
 // useCandidatosDisponiveis.
 export function CandidateSelector({
   eleicaoId,
@@ -31,26 +40,25 @@ export function CandidateSelector({
 }: CandidateSelectorProps) {
   const { data: candidatos, isLoading } = useCandidatosDisponiveis(eleicaoId, uf, cargo)
 
+  const itens: ItemCandidato[] = (candidatos ?? []).map((c) => ({
+    value: c.sqCandidato,
+    label: `${c.nome} (${c.partido})`,
+  }))
+  const selecionado = itens.find((item) => item.value === candidatoId) ?? null
+
   return (
-    <Select
-      value={candidatoId ? String(candidatoId) : null}
-      onValueChange={(valor) => onChange(valor ? Number(valor) : null)}
+    <Combobox
+      items={itens}
+      value={selecionado}
+      onValueChange={(item) => onChange(item ? item.value : null)}
+      isItemEqualToValue={(a, b) => a.value === b.value}
       disabled={!cargo || isLoading}
-      items={Object.fromEntries((candidatos ?? []).map((c) => [String(c.sqCandidato), c.nome]))}
     >
-      <SelectTrigger className={className}>
-        <SelectValue placeholder={isLoading ? 'Carregando...' : 'Candidato'} />
-      </SelectTrigger>
-      <SelectContent>
-        {candidatos?.map((c) => (
-          <SelectItem key={c.sqCandidato} value={String(c.sqCandidato)}>
-            {c.nome} <span className="text-muted-foreground">({c.partido})</span>
-          </SelectItem>
-        ))}
-        {candidatos?.length === 0 && (
-          <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum candidato encontrado</div>
-        )}
-      </SelectContent>
-    </Select>
+      <ComboboxInput placeholder={isLoading ? 'Carregando...' : 'Buscar candidato...'} className={className} />
+      <ComboboxContent>
+        <ComboboxEmpty>Nenhum candidato encontrado</ComboboxEmpty>
+        <ComboboxList>{(item: ItemCandidato) => <ComboboxItem key={item.value} value={item}>{item.label}</ComboboxItem>}</ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   )
 }
