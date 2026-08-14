@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoginPage } from '@/pages/LoginPage'
-import { SeletorEleicaoPage } from '@/pages/SeletorEleicaoPage'
+import { DiagnosticoPage } from '@/pages/DiagnosticoPage'
 import { VisaoEstadoPage } from '@/pages/VisaoEstadoPage'
 import { MunicipioPage } from '@/pages/MunicipioPage'
 import { ZonaPage } from '@/pages/ZonaPage'
@@ -24,7 +24,7 @@ function App() {
 
       <Route element={<AppShell />}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<SeletorEleicaoPage />} />
+        <Route path="/dashboard" element={<DiagnosticoPage />} />
         <Route path="/dashboard/:eleicaoId/:uf" element={<VisaoEstadoPage />} />
         <Route
           path="/dashboard/:eleicaoId/:uf/municipio/:codigoIbge"

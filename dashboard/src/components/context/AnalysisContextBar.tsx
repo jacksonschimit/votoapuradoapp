@@ -1,4 +1,6 @@
+import { useEffect, useMemo } from 'react'
 import { useEleicoes } from '@/hooks/useEleicoes'
+import { useMinhasPermissoes } from '@/hooks/useMinhasPermissoes'
 import { useAppStore } from '@/store/useAppStore'
 import { CARGOS_POR_TIPO_ELEICAO, NOMES_CARGO, itensDeCargo, type Turno } from '@/types/domain'
 import {
@@ -15,17 +17,23 @@ interface AnalysisContextBarProps {
   habilitado: boolean
 }
 
+// Fallback só porque hoje a única UF com dados carregados é o PR —
+// mesmo critério já usado no SeletorEleicaoPage original (Etapa 2).
+const UF_FALLBACK = 'PR'
+
 // Barra de contexto persistente (doc 04 §3): Eleição, Turno, Cargo,
-// Candidato e "+ Comparar" — hierarquicamente acima de qualquer
-// filtro local de tela. A lista de cargos disponível reage ao
-// tipo_eleicao da eleição selecionada (Geral x Municipal).
+// Candidato, "+ Comparar" e Território (UF, por enquanto — o
+// drill-down territorial completo continua vivendo nas rotas
+// existentes) — hierarquicamente acima de qualquer filtro local de
+// tela. A lista de cargos disponível reage ao tipo_eleicao da eleição
+// selecionada (Geral x Municipal).
 //
-// Território ainda não integra esta barra — ver nota em useAppStore.
-// Por isso ela só é montada (no AppShell) nas rotas que não têm um
-// fluxo de eleição próprio via URL, evitando dois seletores de
-// eleição divergentes na mesma tela.
+// Só é montada (no AppShell) nas rotas que não têm um fluxo de
+// eleição próprio via URL, evitando dois seletores divergentes na
+// mesma tela.
 export function AnalysisContextBar({ habilitado }: AnalysisContextBarProps) {
   const { data: eleicoes } = useEleicoes(habilitado)
+  const { data: permissoes } = useMinhasPermissoes(habilitado)
   const {
     eleicaoId,
     uf,
@@ -34,12 +42,31 @@ export function AnalysisContextBar({ habilitado }: AnalysisContextBarProps) {
     candidatoPrincipalId,
     candidatosComparacaoIds,
     setEleicao,
+    setUf,
     setTurno,
     setCargo,
     setCandidatoPrincipal,
     adicionarCandidatoComparacao,
     removerCandidatoComparacao,
   } = useAppStore()
+
+  const ufsDisponiveis = useMemo(() => {
+    if (!permissoes) return []
+    const siglas = permissoes.map((p) => p.sigla_uf).filter((s): s is string => !!s)
+    return Array.from(new Set(siglas))
+  }, [permissoes])
+
+  // Preenche o território automaticamente quando só há uma UF no
+  // escopo do usuário (ou nenhuma restrição, sigla_uf null = todas) —
+  // mesmo comportamento que o SeletorEleicaoPage original tinha.
+  useEffect(() => {
+    if (uf || !permissoes) return
+    if (ufsDisponiveis.length === 1) {
+      setUf(ufsDisponiveis[0])
+    } else if (ufsDisponiveis.length === 0) {
+      setUf(UF_FALLBACK)
+    }
+  }, [uf, permissoes, ufsDisponiveis, setUf])
 
   if (!habilitado) return null
 
@@ -116,6 +143,25 @@ export function AnalysisContextBar({ habilitado }: AnalysisContextBarProps) {
         onAdicionar={adicionarCandidatoComparacao}
         onRemover={removerCandidatoComparacao}
       />
+
+      {ufsDisponiveis.length > 1 && (
+        <Select
+          value={uf}
+          onValueChange={(valor) => setUf(valor)}
+          items={Object.fromEntries(ufsDisponiveis.map((s) => [s, s]))}
+        >
+          <SelectTrigger className="w-24">
+            <SelectValue placeholder="UF" />
+          </SelectTrigger>
+          <SelectContent>
+            {ufsDisponiveis.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   )
 }
