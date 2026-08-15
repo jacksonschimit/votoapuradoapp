@@ -1,25 +1,18 @@
 import { Link } from 'react-router-dom'
-import { useAppStore } from '@/store/useAppStore'
-import { useSession } from '@/hooks/useSession'
-import { useMinhasPermissoes } from '@/hooks/useMinhasPermissoes'
-import { useCandidato } from '@/hooks/useCandidato'
-import { useResultadoCandidatoMunicipio } from '@/hooks/useResultadoCandidatoMunicipio'
-import { useVotosValidosCargoMunicipio } from '@/hooks/useVotosValidosCargoMunicipio'
-import { useVotosValidosCargoUf } from '@/hooks/useVotosValidosCargoUf'
+import { useAnaliseTerritorialCandidato } from '@/hooks/useAnaliseTerritorialCandidato'
 import { calcularConcentracaoTopN } from '@/lib/metrics/concentracao'
-import { calcularParticipacao, calcularQuocienteLocacional } from '@/lib/metrics/participacao'
-import { classificarTerritorio } from '@/lib/metrics/classificacao'
+import { calcularGanhoCenario } from '@/lib/metrics/cenario'
+import { classificarOportunidade, INCREMENTO_CENARIO_OPORTUNIDADE } from '@/lib/metrics/oportunidade'
 import { NOMES_CARGO, type Cargo } from '@/types/domain'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { buttonVariants } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
-import { PermissionState } from '@/components/states/PermissionState'
 import { TerritoryBreadcrumb } from '@/components/context/TerritoryBreadcrumb'
+import { RequireAnalysisContext } from '@/components/context/RequireAnalysisContext'
 import { HeroInsightCard } from '@/components/diagnostico/HeroInsightCard'
 import { InsightCard } from '@/components/diagnostico/InsightCard'
 import { MapaCandidatoMunicipios } from '@/components/diagnostico/MapaCandidatoMunicipios'
@@ -28,78 +21,17 @@ const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
 const FORMATO_PERCENTUAL = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
 const FORMATO_QL = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-interface LinhaTerritorio {
-  codigo_municipio: number
-  nome_municipio: string
-  votos: number
-  pt: number | null
-  ce: number | null
-  ql: number | null
-  forca: boolean
-  sustentacao: boolean
-  baixaPresenca: boolean
-}
-
 // Home de Diagnóstico (Épico 2, docs/11) — substitui o antigo
 // SeletorEleicaoPage como conteúdo de /dashboard. O contexto (eleição,
 // turno, cargo, candidato, território) vem inteiramente do
 // AnalysisContextBar/useAppStore, montado globalmente pelo AppShell.
 export function DiagnosticoPage() {
-  const { session, carregando: carregandoSessao } = useSession()
-  const { data: permissoes, isLoading: carregandoPermissoes } = useMinhasPermissoes(!!session)
-  const { eleicaoId, uf, cargo, candidatoPrincipalId } = useAppStore()
-
-  if (carregandoSessao || (session && carregandoPermissoes)) {
-    return (
-      <div className="mx-auto max-w-2xl p-8">
-        <Skeleton className="h-40" />
-      </div>
-    )
-  }
-
-  if (!session) {
-    return (
-      <div className="mx-auto max-w-md space-y-4 p-8 text-center">
-        <Alert>
-          <AlertTitle>Você precisa entrar</AlertTitle>
-          <AlertDescription>Faça login para acessar o diagnóstico eleitoral.</AlertDescription>
-        </Alert>
-        <Link to="/login" className={buttonVariants()}>
-          Ir para o login
-        </Link>
-      </div>
-    )
-  }
-
-  if (!permissoes || permissoes.length === 0) {
-    return (
-      <div className="mx-auto max-w-md p-8">
-        <PermissionState
-          titulo="Acesso pendente de liberação"
-          descricao="Seu login foi feito com sucesso, mas ainda não há nenhum escopo de dados liberado para sua conta. Fale com o administrador responsável."
-        />
-      </div>
-    )
-  }
-
-  if (!eleicaoId || !uf || !cargo || !candidatoPrincipalId) {
-    return (
-      <div className="mx-auto max-w-2xl p-8">
-        <EmptyState
-          titulo="Comece selecionando o contexto da análise"
-          descricao="Escolha eleição, cargo e candidato na barra no topo da tela para ver o diagnóstico."
-        />
-      </div>
-    )
-  }
-
   return (
-    <DiagnosticoConteudo
-      eleicaoId={String(eleicaoId)}
-      uf={uf}
-      cargo={cargo}
-      sqCandidato={String(candidatoPrincipalId)}
-    />
+    <RequireAnalysisContext>
+      {({ eleicaoId, uf, cargo, sqCandidato }) => (
+        <DiagnosticoConteudo eleicaoId={eleicaoId} uf={uf} cargo={cargo} sqCandidato={sqCandidato} />
+      )}
+    </RequireAnalysisContext>
   )
 }
 
@@ -114,23 +46,14 @@ function DiagnosticoConteudo({
   cargo: Cargo
   sqCandidato: string
 }) {
-  const { data: candidato, isLoading: carregandoCandidato } = useCandidato(sqCandidato)
-  const {
-    data: resultados,
-    isLoading: carregandoResultados,
-    isError: erroResultados,
-  } = useResultadoCandidatoMunicipio(sqCandidato)
-  const { data: votosValidosMunicipio, isLoading: carregandoVotosMunicipio } = useVotosValidosCargoMunicipio(
+  const { candidato, territorios, totalVotosCandidato, isLoading, isError } = useAnaliseTerritorialCandidato(
     eleicaoId,
     uf,
-    cargo
+    cargo,
+    sqCandidato
   )
-  const { data: votosValidosUf, isLoading: carregandoVotosUf } = useVotosValidosCargoUf(eleicaoId, uf, cargo)
 
-  const carregando =
-    carregandoCandidato || carregandoResultados || carregandoVotosMunicipio || carregandoVotosUf
-
-  if (carregando) {
+  if (isLoading) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 p-8">
         <Skeleton className="h-8 w-64" />
@@ -144,7 +67,7 @@ function DiagnosticoConteudo({
     )
   }
 
-  if (erroResultados || !candidato) {
+  if (isError || !candidato) {
     return (
       <div className="mx-auto max-w-2xl p-8">
         <ErrorState descricao="Não foi possível carregar o diagnóstico deste candidato." />
@@ -152,37 +75,25 @@ function DiagnosticoConteudo({
     )
   }
 
-  const concentracao = calcularConcentracaoTopN(resultados ?? [])
-
-  // PT/CE/QL e classificação por município — a agregação pesada
-  // (soma de votação por candidato/território) já veio pronta do
-  // banco (vw_resultado_candidato_municipio, vw_votos_validos_cargo_*);
-  // aqui só combinamos números já pequenos com funções puras testadas
-  // (lib/metrics/participacao.ts, classificacao.ts).
-  const votosValidosPorMunicipio = new Map((votosValidosMunicipio ?? []).map((v) => [v.codigo_municipio, v.votos_validos]))
-  const votosValidosCargoUf = votosValidosUf?.votos_validos ?? 0
-
-  const territorios: LinhaTerritorio[] = (resultados ?? []).map((r) => {
-    const votosValidosTerritorio = votosValidosPorMunicipio.get(r.codigo_municipio) ?? 0
-    const pt = calcularParticipacao(r.total_votos, votosValidosTerritorio)
-    const ce = calcularParticipacao(r.total_votos, concentracao.totalVotos)
-    const participacaoGeral = calcularParticipacao(votosValidosTerritorio, votosValidosCargoUf)
-    const ql = calcularQuocienteLocacional(ce, participacaoGeral)
-    const classificacao = classificarTerritorio(ql, ce, votosValidosTerritorio)
-
-    return {
-      codigo_municipio: r.codigo_municipio,
-      nome_municipio: r.nome_municipio,
-      votos: r.total_votos,
-      pt,
-      ce,
-      ql,
-      ...classificacao,
-    }
-  })
+  const concentracao = calcularConcentracaoTopN(
+    territorios.map((t) => ({ codigo_municipio: t.codigo_municipio, nome_municipio: t.nome_municipio, total_votos: t.votos }))
+  )
 
   const territoriosDeForca = territorios.filter((t) => t.forca).length
   const territoriosDeSustentacao = territorios.filter((t) => t.sustentacao).length
+
+  const oportunidades = territorios
+    .map((t) => {
+      const participacaoSimulada = t.pt !== null ? t.pt + INCREMENTO_CENARIO_OPORTUNIDADE : null
+      const ganho =
+        participacaoSimulada !== null
+          ? calcularGanhoCenario(t.votosValidosTerritorio, participacaoSimulada, t.votos).ganhoCenario
+          : null
+      const papel = classificarOportunidade(t, t.votosValidosTerritorio, ganho)
+      return { ...t, ganho, papel }
+    })
+    .filter((t) => t.papel === 'expansao')
+    .sort((a, b) => (b.ganho ?? 0) - (a.ganho ?? 0))
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-8">
@@ -198,7 +109,7 @@ function DiagnosticoConteudo({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <HeroInsightCard titulo="Resultado histórico" valor={`${FORMATO_NUMERO.format(concentracao.totalVotos)} votos`} />
+        <HeroInsightCard titulo="Resultado histórico" valor={`${FORMATO_NUMERO.format(totalVotosCandidato)} votos`} />
         <InsightCard
           titulo="Concentração territorial"
           valor={
@@ -301,6 +212,50 @@ function DiagnosticoConteudo({
 
       <Card>
         <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>Oportunidades de crescimento</CardTitle>
+            <Link to="/dashboard/oportunidades" className="text-sm text-primary hover:underline">
+              Ver todas ({oportunidades.length})
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {oportunidades.length === 0 ? (
+            <EmptyState
+              titulo="Nenhuma oportunidade de expansão identificada"
+              descricao="Com os dados e limiares atuais, nenhum território se qualifica como oportunidade de expansão."
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {oportunidades.slice(0, 4).map((t) => (
+                <div key={t.codigo_municipio} className="space-y-1 rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium">{t.nome_municipio}</span>
+                    <Badge
+                      variant="secondary"
+                      className="bg-semantic-opportunity text-semantic-opportunity-foreground"
+                    >
+                      Expansão
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    PT atual: {t.pt !== null ? FORMATO_PERCENTUAL.format(t.pt * 100) : '—'}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Cenário +{INCREMENTO_CENARIO_OPORTUNIDADE * 100}p.p.:{' '}
+                    <span className="font-medium text-foreground">
+                      +{FORMATO_NUMERO.format(Math.round(t.ganho ?? 0))} votos
+                    </span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Simule seu crescimento</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
@@ -319,10 +274,11 @@ function DiagnosticoConteudo({
           <strong>PT (Participação Territorial):</strong> percentual dos votos válidos do cargo naquele
           município que foram para este candidato. <strong>QL (força relativa):</strong> compara a presença
           do candidato no município com a distribuição geral do cargo na UF — acima de 1x indica
-          sobrerrepresentação. Classificações (Força/Sustentação/Baixa presença) usam limiares iniciais,
-          ainda não calibrados com homologação real — sujeitos a ajuste.
+          sobrerrepresentação. Classificações (Força/Sustentação/Baixa presença/Oportunidades) usam limiares
+          iniciais, ainda não calibrados com homologação real — sujeitos a ajuste. "Cenário" é uma simulação
+          matemática sobre os resultados históricos — não representa previsão eleitoral.
         </p>
-        <p>Concentração territorial mostra a participação dos maiores municípios no total de votos do candidato — não é uma previsão eleitoral.</p>
+        <p>Concentração territorial mostra a participação dos maiores municípios no total de votos do candidato.</p>
       </div>
     </div>
   )
