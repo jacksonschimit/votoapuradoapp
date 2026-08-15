@@ -4,10 +4,12 @@ import { useSession } from '@/hooks/useSession'
 import { useMinhasPermissoes } from '@/hooks/useMinhasPermissoes'
 import { useCandidato } from '@/hooks/useCandidato'
 import { useResultadoCandidatoMunicipio } from '@/hooks/useResultadoCandidatoMunicipio'
-import { useDominanciaCandidatoMunicipio } from '@/hooks/useDominanciaCandidatoMunicipio'
+import { useVotosValidosCargoMunicipio } from '@/hooks/useVotosValidosCargoMunicipio'
+import { useVotosValidosCargoUf } from '@/hooks/useVotosValidosCargoUf'
 import { calcularConcentracaoTopN } from '@/lib/metrics/concentracao'
-import { contarTerritoriosDominados } from '@/lib/metrics/territorios'
-import { NOMES_CARGO } from '@/types/domain'
+import { calcularParticipacao, calcularQuocienteLocacional } from '@/lib/metrics/participacao'
+import { classificarTerritorio } from '@/lib/metrics/classificacao'
+import { NOMES_CARGO, type Cargo } from '@/types/domain'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +26,19 @@ import { MapaCandidatoMunicipios } from '@/components/diagnostico/MapaCandidatoM
 
 const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
 const FORMATO_PERCENTUAL = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
+const FORMATO_QL = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+interface LinhaTerritorio {
+  codigo_municipio: number
+  nome_municipio: string
+  votos: number
+  pt: number | null
+  ce: number | null
+  ql: number | null
+  forca: boolean
+  sustentacao: boolean
+  baixaPresenca: boolean
+}
 
 // Home de Diagnóstico (Épico 2, docs/11) — substitui o antigo
 // SeletorEleicaoPage como conteúdo de /dashboard. O contexto (eleição,
@@ -96,7 +111,7 @@ function DiagnosticoConteudo({
 }: {
   eleicaoId: string
   uf: string
-  cargo: string
+  cargo: Cargo
   sqCandidato: string
 }) {
   const { data: candidato, isLoading: carregandoCandidato } = useCandidato(sqCandidato)
@@ -105,9 +120,15 @@ function DiagnosticoConteudo({
     isLoading: carregandoResultados,
     isError: erroResultados,
   } = useResultadoCandidatoMunicipio(sqCandidato)
-  const { data: dominancias, isLoading: carregandoDominancias } = useDominanciaCandidatoMunicipio(sqCandidato)
+  const { data: votosValidosMunicipio, isLoading: carregandoVotosMunicipio } = useVotosValidosCargoMunicipio(
+    eleicaoId,
+    uf,
+    cargo
+  )
+  const { data: votosValidosUf, isLoading: carregandoVotosUf } = useVotosValidosCargoUf(eleicaoId, uf, cargo)
 
-  const carregando = carregandoCandidato || carregandoResultados || carregandoDominancias
+  const carregando =
+    carregandoCandidato || carregandoResultados || carregandoVotosMunicipio || carregandoVotosUf
 
   if (carregando) {
     return (
@@ -132,7 +153,36 @@ function DiagnosticoConteudo({
   }
 
   const concentracao = calcularConcentracaoTopN(resultados ?? [])
-  const territoriosDominados = contarTerritoriosDominados(dominancias ?? [])
+
+  // PT/CE/QL e classificação por município — a agregação pesada
+  // (soma de votação por candidato/território) já veio pronta do
+  // banco (vw_resultado_candidato_municipio, vw_votos_validos_cargo_*);
+  // aqui só combinamos números já pequenos com funções puras testadas
+  // (lib/metrics/participacao.ts, classificacao.ts).
+  const votosValidosPorMunicipio = new Map((votosValidosMunicipio ?? []).map((v) => [v.codigo_municipio, v.votos_validos]))
+  const votosValidosCargoUf = votosValidosUf?.votos_validos ?? 0
+
+  const territorios: LinhaTerritorio[] = (resultados ?? []).map((r) => {
+    const votosValidosTerritorio = votosValidosPorMunicipio.get(r.codigo_municipio) ?? 0
+    const pt = calcularParticipacao(r.total_votos, votosValidosTerritorio)
+    const ce = calcularParticipacao(r.total_votos, concentracao.totalVotos)
+    const participacaoGeral = calcularParticipacao(votosValidosTerritorio, votosValidosCargoUf)
+    const ql = calcularQuocienteLocacional(ce, participacaoGeral)
+    const classificacao = classificarTerritorio(ql, ce, votosValidosTerritorio)
+
+    return {
+      codigo_municipio: r.codigo_municipio,
+      nome_municipio: r.nome_municipio,
+      votos: r.total_votos,
+      pt,
+      ce,
+      ql,
+      ...classificacao,
+    }
+  })
+
+  const territoriosDeForca = territorios.filter((t) => t.forca).length
+  const territoriosDeSustentacao = territorios.filter((t) => t.sustentacao).length
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-8">
@@ -140,7 +190,7 @@ function DiagnosticoConteudo({
         <TerritoryBreadcrumb migalhas={[{ label: uf }]} />
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold">Diagnóstico Eleitoral</h1>
-          <Badge variant="secondary">{NOMES_CARGO[cargo as keyof typeof NOMES_CARGO] ?? cargo}</Badge>
+          <Badge variant="secondary">{NOMES_CARGO[cargo]}</Badge>
         </div>
         <p className="text-sm text-muted-foreground">
           {candidato.nm_urna_candidato} · {candidato.sigla_partido}
@@ -159,9 +209,9 @@ function DiagnosticoConteudo({
           descricao={`Dos votos estão nos ${concentracao.topN.length} principais municípios.`}
         />
         <InsightCard
-          titulo="Territórios de força"
-          valor={String(territoriosDominados)}
-          descricao="Municípios com dominância de 50% ou mais."
+          titulo="Territórios"
+          valor={`${territoriosDeForca} de força`}
+          descricao={`${territoriosDeSustentacao} de sustentação. Força = candidato sobrerrepresentado ali (QL); sustentação = território pesa muito no total do candidato (CE).`}
         />
       </div>
 
@@ -187,29 +237,62 @@ function DiagnosticoConteudo({
                 <TableRow>
                   <TableHead>Município</TableHead>
                   <TableHead className="text-right">Votos</TableHead>
-                  <TableHead className="text-right">% do total do candidato</TableHead>
+                  <TableHead className="text-right">Participação territorial (PT)</TableHead>
+                  <TableHead className="text-right">Contribuição eleitoral (CE)</TableHead>
+                  <TableHead className="text-right">Força relativa (QL)</TableHead>
+                  <TableHead>Classificação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {concentracao.topN.map((m) => (
-                  <TableRow key={m.codigo_municipio}>
-                    <TableCell>
-                      <Link
-                        to={`/dashboard/${eleicaoId}/${uf}/municipio/${m.codigo_municipio}`}
-                        className="hover:underline"
-                      >
-                        {m.nome_municipio}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{FORMATO_NUMERO.format(m.total_votos)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {concentracao.totalVotos > 0
-                        ? FORMATO_PERCENTUAL.format((m.total_votos / concentracao.totalVotos) * 100)
-                        : '—'}
-                      %
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {territorios
+                  .slice()
+                  .sort((a, b) => b.votos - a.votos)
+                  .slice(0, concentracao.topN.length)
+                  .map((t) => (
+                    <TableRow key={t.codigo_municipio}>
+                      <TableCell>
+                        <Link
+                          to={`/dashboard/${eleicaoId}/${uf}/municipio/${t.codigo_municipio}`}
+                          className="hover:underline"
+                        >
+                          {t.nome_municipio}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{FORMATO_NUMERO.format(t.votos)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {t.pt !== null ? `${FORMATO_PERCENTUAL.format(t.pt * 100)}%` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {t.ce !== null ? `${FORMATO_PERCENTUAL.format(t.ce * 100)}%` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {t.ql !== null ? `${FORMATO_QL.format(t.ql)}x` : '—'}
+                      </TableCell>
+                      <TableCell className="flex flex-wrap gap-1">
+                        {t.forca && (
+                          <Badge variant="secondary" className="bg-semantic-force text-semantic-force-foreground">
+                            Força
+                          </Badge>
+                        )}
+                        {t.sustentacao && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-semantic-support text-semantic-support-foreground"
+                          >
+                            Sustentação
+                          </Badge>
+                        )}
+                        {t.baixaPresenca && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-semantic-low-presence text-semantic-low-presence-foreground"
+                          >
+                            Baixa presença
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           )}
@@ -230,10 +313,17 @@ function DiagnosticoConteudo({
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground">
-        Dados oficiais do TSE. Concentração territorial mostra a participação dos maiores municípios no total de
-        votos do candidato — não é um índice de dominância nem uma previsão eleitoral.
-      </p>
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>Dados oficiais do TSE, apurados por seção eleitoral.</p>
+        <p>
+          <strong>PT (Participação Territorial):</strong> percentual dos votos válidos do cargo naquele
+          município que foram para este candidato. <strong>QL (força relativa):</strong> compara a presença
+          do candidato no município com a distribuição geral do cargo na UF — acima de 1x indica
+          sobrerrepresentação. Classificações (Força/Sustentação/Baixa presença) usam limiares iniciais,
+          ainda não calibrados com homologação real — sujeitos a ajuste.
+        </p>
+        <p>Concentração territorial mostra a participação dos maiores municípios no total de votos do candidato — não é uma previsão eleitoral.</p>
+      </div>
     </div>
   )
 }
