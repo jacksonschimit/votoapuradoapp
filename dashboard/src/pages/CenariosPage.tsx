@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Plus, X } from 'lucide-react'
+import { useSession } from '@/hooks/useSession'
 import { useAnaliseTerritorialCandidato } from '@/hooks/useAnaliseTerritorialCandidato'
 import { useVotosValidosCargoMunicipio } from '@/hooks/useVotosValidosCargoMunicipio'
+import { useCenariosSalvos, useSalvarCenario, useExcluirCenario } from '@/hooks/useCenariosSalvos'
 import { calcularGanhoCenario, sugerirDistribuicao } from '@/lib/metrics/cenario'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
@@ -17,6 +20,8 @@ import { TerritoryBreadcrumb } from '@/components/context/TerritoryBreadcrumb'
 import { RequireAnalysisContext } from '@/components/context/RequireAnalysisContext'
 import { MapaImpactoCenario } from '@/components/cenarios/MapaImpactoCenario'
 import type { Cargo } from '@/types/domain'
+
+const FORMATO_DATA = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
 const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
 const FORMATO_PERCENTUAL = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
@@ -63,11 +68,17 @@ function CenariosConteudo({
     uf,
     cargo
   )
+  const { session } = useSession()
+  const { data: cenariosSalvos } = useCenariosSalvos(sqCandidato)
+  const salvarCenario = useSalvarCenario()
+  const excluirCenario = useExcluirCenario()
 
   const [metaTotal, setMetaTotal] = useState(0)
   const [territoriosCenario, setTerritoriosCenario] = useState<TerritorioCenario[]>([])
   const [buscaAdicionar, setBuscaAdicionar] = useState('')
   const [popoverAberto, setPopoverAberto] = useState(false)
+  const [dialogSalvarAberto, setDialogSalvarAberto] = useState(false)
+  const [nomeCenario, setNomeCenario] = useState('')
 
   const votosHistoricosPorMunicipio = useMemo(
     () => new Map(territorios.map((t) => [t.codigo_municipio, t.votos])),
@@ -115,6 +126,47 @@ function CenariosConteudo({
   function limpar() {
     setTerritoriosCenario([])
     setMetaTotal(0)
+  }
+
+  function confirmarSalvar() {
+    if (!session || !nomeCenario.trim() || territoriosCenario.length === 0) return
+    salvarCenario.mutate(
+      {
+        userId: session.user.id,
+        eleicaoId,
+        uf,
+        cargo,
+        sqCandidato,
+        nome: nomeCenario.trim(),
+        metaTotal,
+        territorios: territoriosCenario.map((t) => ({
+          codigo_municipio: t.codigoMunicipio,
+          nome_municipio: t.nomeMunicipio,
+          votos_historicos: t.votosHistoricos,
+          votos_validos_territorio: t.votosValidosTerritorio,
+          meta_simulada: t.metaSimulada,
+        })),
+      },
+      {
+        onSuccess: () => {
+          setDialogSalvarAberto(false)
+          setNomeCenario('')
+        },
+      }
+    )
+  }
+
+  function carregarCenario(cenario: NonNullable<typeof cenariosSalvos>[number]) {
+    setMetaTotal(cenario.meta_total)
+    setTerritoriosCenario(
+      cenario.territorios.map((t) => ({
+        codigoMunicipio: t.codigo_municipio,
+        nomeMunicipio: t.nome_municipio,
+        votosHistoricos: t.votos_historicos,
+        votosValidosTerritorio: t.votos_validos_territorio,
+        metaSimulada: t.meta_simulada,
+      }))
+    )
   }
 
   function aplicarDistribuicaoSugerida() {
@@ -231,9 +283,75 @@ function CenariosConteudo({
             <Button type="button" variant="ghost" size="sm" onClick={limpar} disabled={territoriosCenario.length === 0}>
               Limpar
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDialogSalvarAberto(true)}
+              disabled={territoriosCenario.length === 0}
+            >
+              Salvar cenário
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={dialogSalvarAberto} onOpenChange={setDialogSalvarAberto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Salvar cenário</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="Nome do cenário (ex: Meta agressiva 2º turno)"
+            value={nomeCenario}
+            onChange={(e) => setNomeCenario(e.target.value)}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={confirmarSalvar}
+              disabled={!nomeCenario.trim() || salvarCenario.isPending}
+            >
+              {salvarCenario.isPending ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {cenariosSalvos && cenariosSalvos.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Cenários salvos</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {cenariosSalvos.map((c) => (
+              <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">{c.nome}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Meta: {FORMATO_NUMERO.format(c.meta_total)} votos · {c.territorios.length} territórios ·{' '}
+                    {FORMATO_DATA.format(new Date(c.criado_em))}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => carregarCenario(c)}>
+                    Carregar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => excluirCenario.mutate({ id: c.id, sqCandidato })}
+                  >
+                    Excluir
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">

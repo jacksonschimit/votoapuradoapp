@@ -284,3 +284,27 @@ export interface VotosValidosCargoUf {
   cargo: Cargo
   votos_validos: number
 }
+
+// Um território dentro de um cenário salvo (Épico 5, doc 06 §4) —
+// espelha o jsonb gravado em cenarios_salvos.territorios.
+export interface TerritorioCenarioSalvo {
+  codigo_municipio: number
+  nome_municipio: string
+  votos_historicos: number
+  votos_validos_territorio: number
+  meta_simulada: number
+}
+
+export interface CenarioSalvo {
+  id: number
+  user_id: string
+  eleicao_id: number
+  sigla_uf: string
+  cargo: Cargo
+  sq_candidato: number
+  nome: string
+  meta_total: number
+  territorios: TerritorioCenarioSalvo[]
+  criado_em: string
+  atualizado_em: string
+}
