@@ -17,6 +17,11 @@ interface CandidateCompareSelectorProps {
   onRemover: (sqCandidato: number) => void
 }
 
+// Máximo de candidatos em comparação simultânea (além do principal) —
+// doc 11 critério de aceite do Épico 6 "sem poluição visual": acima
+// disso, cards/tabela/mapa comparativo ficam ilegíveis.
+const MAXIMO_CANDIDATOS_COMPARACAO = 3
+
 // Ação "+ Comparar candidato" (doc 02 §8, doc 04 §8): busca e inclui
 // candidatos compatíveis (mesma eleição/cargo) no modo comparativo,
 // exibidos como chips removíveis no context bar.
@@ -61,7 +66,16 @@ export function CandidateCompareSelector({
       <Popover open={aberto} onOpenChange={setAberto}>
         <PopoverTrigger
           render={
-            <Button variant="outline" size="sm" disabled={!cargo || !candidatoPrincipalId}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!cargo || !candidatoPrincipalId || candidatosComparacaoIds.length >= MAXIMO_CANDIDATOS_COMPARACAO}
+              title={
+                candidatosComparacaoIds.length >= MAXIMO_CANDIDATOS_COMPARACAO
+                  ? `Máximo de ${MAXIMO_CANDIDATOS_COMPARACAO} candidatos em comparação`
+                  : undefined
+              }
+            >
               <Plus />
               Comparar
             </Button>

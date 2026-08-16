@@ -25,3 +25,32 @@ export function calcularGanhoCenario(
     ganhoCenario: votosCenario - votosAtuaisCandidato,
   }
 }
+
+export interface TerritorioDistribuivel {
+  codigoMunicipio: number
+  votosValidosTerritorio: number
+  votosAtuais: number
+}
+
+// "Distribuição sugerida" do Simulador de Cenários (Épico 5, doc 06
+// §4): reparte uma meta de crescimento entre territórios
+// proporcionalmente ao tamanho do eleitorado válido de cada um
+// (território maior recebe parcela maior), sempre respeitando o teto
+// de 100% de participação (doc 03 §6). É um critério simples e
+// explicável — não uma otimização por força relativa/QL — porque a
+// sugestão precisa caber numa frase curta no disclaimer da tela.
+export function sugerirDistribuicao(
+  territorios: TerritorioDistribuivel[],
+  metaTotalVotos: number
+): Map<number, number> {
+  const pesoTotal = territorios.reduce((soma, t) => soma + t.votosValidosTerritorio, 0)
+  const sugestao = new Map<number, number>()
+
+  for (const t of territorios) {
+    const parcela = pesoTotal > 0 ? metaTotalVotos * (t.votosValidosTerritorio / pesoTotal) : 0
+    const metaSugerida = Math.min(t.votosValidosTerritorio, Math.round(t.votosAtuais + parcela))
+    sugestao.set(t.codigoMunicipio, Math.max(0, metaSugerida))
+  }
+
+  return sugestao
+}
