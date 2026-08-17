@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .venv/
+geocode_output.log
+geocode_falhas.log

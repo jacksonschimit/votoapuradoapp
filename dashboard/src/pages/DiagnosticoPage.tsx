@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useAnaliseTerritorialCandidato } from '@/hooks/useAnaliseTerritorialCandidato'
 import { calcularConcentracaoTopN } from '@/lib/metrics/concentracao'
 import { calcularGanhoCenario } from '@/lib/metrics/cenario'
@@ -16,6 +17,9 @@ import { RequireAnalysisContext } from '@/components/context/RequireAnalysisCont
 import { HeroInsightCard } from '@/components/diagnostico/HeroInsightCard'
 import { InsightCard } from '@/components/diagnostico/InsightCard'
 import { MapaCandidatoMunicipios } from '@/components/diagnostico/MapaCandidatoMunicipios'
+import { corToken } from '@/lib/theme'
+
+const TOP_MUNICIPIOS_GRAFICO = 8
 
 const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
 const FORMATO_PERCENTUAL = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
@@ -81,6 +85,18 @@ function DiagnosticoConteudo({
 
   const territoriosDeForca = territorios.filter((t) => t.forca).length
   const territoriosDeSustentacao = territorios.filter((t) => t.sustentacao).length
+  const territoriosDeBaixaPresenca = territorios.filter((t) => t.baixaPresenca).length
+
+  const topMunicipiosGrafico = territorios
+    .slice()
+    .sort((a, b) => b.votos - a.votos)
+    .slice(0, TOP_MUNICIPIOS_GRAFICO)
+
+  const dadosCamadas = [
+    { camada: 'Força', quantidade: territoriosDeForca, cor: corToken('--semantic-force') },
+    { camada: 'Sustentação', quantidade: territoriosDeSustentacao, cor: corToken('--semantic-support') },
+    { camada: 'Baixa presença', quantidade: territoriosDeBaixaPresenca, cor: corToken('--semantic-low-presence') },
+  ]
 
   const oportunidades = territorios
     .map((t) => {
@@ -134,6 +150,53 @@ function DiagnosticoConteudo({
           <MapaCandidatoMunicipios eleicaoId={eleicaoId} uf={uf} sqCandidato={sqCandidato} />
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Top {topMunicipiosGrafico.length} municípios</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topMunicipiosGrafico.length === 0 ? (
+              <EmptyState titulo="Sem votos apurados" descricao="Nenhum voto encontrado para este candidato." />
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(220, topMunicipiosGrafico.length * 32)}>
+                <BarChart data={topMunicipiosGrafico} layout="vertical" margin={{ left: 24 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(v) => FORMATO_NUMERO.format(v)} />
+                  <YAxis type="category" dataKey="nome_municipio" width={110} tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(v) => FORMATO_NUMERO.format(Number(v))} />
+                  <Bar dataKey="votos" fill={corToken('--primary-600')} radius={4} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Camadas territoriais</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={dadosCamadas} margin={{ top: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="camada" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} />
+                <Tooltip formatter={(v) => `${v} territórios`} />
+                <Bar dataKey="quantidade" radius={4}>
+                  {dadosCamadas.map((d) => (
+                    <Cell key={d.camada} fill={d.cor} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Camadas não são exclusivas — um território pode contar em mais de uma.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>

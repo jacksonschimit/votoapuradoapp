@@ -4,17 +4,10 @@ import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet'
 import type { Layer, PathOptions } from 'leaflet'
 import type { Feature } from 'geojson'
 import { useDominanciaCandidatoMunicipio } from '@/hooks/useDominanciaCandidatoMunicipio'
-import { corToken } from '@/lib/theme'
+import { corCalor, corToken } from '@/lib/theme'
 import { MAPTILER_ATTRIBUTION, MAPTILER_TILE_URL } from '@/lib/mapTiles'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-
-function corPorPresenca(percentual: number | undefined): string {
-  if (percentual === undefined) return corToken('--semantic-neutral')
-  if (percentual >= 50) return corToken('--semantic-force')
-  if (percentual >= 25) return corToken('--semantic-opportunity')
-  return corToken('--semantic-low-presence')
-}
 
 interface MapaCandidatoMunicipiosProps {
   eleicaoId: string
@@ -58,13 +51,14 @@ export function MapaCandidatoMunicipios({ eleicaoId, uf, sqCandidato }: MapaCand
   }
 
   const presencaPorMunicipio = new Map(presencas?.map((p) => [p.codigo_municipio, p]))
+  const votosMaximo = Math.max(1, ...(presencas ?? []).map((p) => p.qtde_votos))
 
   function estiloFeature(feature?: Feature): PathOptions {
     const codigo = feature ? Number(feature.properties?.codarea) : undefined
     const presenca = codigo ? presencaPorMunicipio.get(codigo) : undefined
     return {
-      fillColor: corPorPresenca(presenca?.percentual_dominancia),
-      fillOpacity: 0.75,
+      fillColor: presenca ? corCalor(presenca.qtde_votos / votosMaximo) : corToken('--semantic-neutral'),
+      fillOpacity: 0.8,
       color: '#ffffff',
       weight: 1,
     }
@@ -96,18 +90,17 @@ export function MapaCandidatoMunicipios({ eleicaoId, uf, sqCandidato }: MapaCand
         <TileLayer attribution={MAPTILER_ATTRIBUTION} url={MAPTILER_TILE_URL} />
         {geojson && <GeoJSON data={geojson} style={estiloFeature} onEachFeature={aoCarregarFeature} />}
       </MapContainer>
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm bg-semantic-force" /> Base forte (≥50%)
+          Menos votos
+          <span
+            className="h-3 w-24 rounded-sm"
+            style={{ background: `linear-gradient(to right, ${corCalor(0)}, ${corCalor(0.5)}, ${corCalor(1)})` }}
+          />
+          Mais votos
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm bg-semantic-opportunity" /> Presença moderada (25–50%)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm bg-semantic-low-presence" /> Presença baixa (&lt;25%)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm bg-semantic-neutral" /> Sem dados
+          <span className="size-3 rounded-sm bg-semantic-neutral" /> Sem votos apurados
         </span>
       </div>
     </div>
