@@ -84,13 +84,19 @@ export function MunicipioPage() {
     () => new Map((dominanciaLocais ?? []).map((d) => [d.local_votacao_id, d.qtde_votos])),
     [dominanciaLocais]
   )
+  const numeroZonaPorId = useMemo(() => new Map((zonas ?? []).map((z) => [z.id, z.numero_zona])), [zonas])
   const pontosCalor = (locais ?? [])
     .filter((l) => l.latitude !== null && l.longitude !== null && (votosPorLocal.get(l.id) ?? 0) > 0)
     .map((l) => ({
+      localVotacaoId: l.id,
       latitude: l.latitude!,
       longitude: l.longitude!,
       votos: votosPorLocal.get(l.id) ?? 0,
       nomeLocal: l.nome_local,
+      endereco: l.endereco,
+      codigoLocalTse: l.codigo_local_tse,
+      numeroZona: numeroZonaPorId.get(l.zona_id) ?? 0,
+      zonaId: l.zona_id,
     }))
 
   return (
@@ -205,7 +211,13 @@ export function MunicipioPage() {
             {carregandoLocais || carregandoDominanciaLocais ? (
               <Skeleton className="h-[360px] w-full" />
             ) : (
-              <MapaCalorIntraCidade pontos={pontosCalor} totalLocais={locais?.length ?? 0} />
+              <MapaCalorIntraCidade
+                pontos={pontosCalor}
+                totalLocais={locais?.length ?? 0}
+                eleicaoId={eleicaoId ?? ''}
+                uf={uf ?? ''}
+                codigoIbge={codigoIbge ?? ''}
+              />
             )}
           </CardContent>
         </Card>
