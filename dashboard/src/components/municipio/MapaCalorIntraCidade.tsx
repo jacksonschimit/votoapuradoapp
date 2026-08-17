@@ -1,59 +1,43 @@
-import { useEffect } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet.heat'
+import { useNavigate } from 'react-router-dom'
+import { CircleMarker, MapContainer, TileLayer, Tooltip } from 'react-leaflet'
+import { corCalor } from '@/lib/theme'
 import { MAPTILER_ATTRIBUTION, MAPTILER_TILE_URL } from '@/lib/mapTiles'
 import { EmptyState } from '@/components/states/EmptyState'
 
+const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
+const RAIO_MIN = 7
+const RAIO_MAX = 24
+
 export interface PontoCalorLocal {
+  localVotacaoId: number
   latitude: number
   longitude: number
   votos: number
   nomeLocal: string
-}
-
-interface CamadaCalorProps {
-  pontos: PontoCalorLocal[]
-}
-
-// Camada de calor imperativa (leaflet.heat não tem wrapper react-leaflet
-// oficial) — adiciona/remove do mapa via useMap(), fora do ciclo de
-// render do React.
-function CamadaCalor({ pontos }: CamadaCalorProps) {
-  const map = useMap()
-
-  useEffect(() => {
-    if (pontos.length === 0) return undefined
-
-    const pesoMaximo = Math.max(1, ...pontos.map((p) => p.votos))
-    const camada = L.heatLayer(
-      pontos.map((p) => [p.latitude, p.longitude, p.votos / pesoMaximo]),
-      { radius: 30, blur: 22, maxZoom: 17, max: 1 }
-    )
-    camada.addTo(map)
-
-    const limites = L.latLngBounds(pontos.map((p) => [p.latitude, p.longitude]))
-    map.fitBounds(limites, { padding: [24, 24] })
-
-    return () => {
-      camada.remove()
-    }
-  }, [map, pontos])
-
-  return null
+  endereco: string | null
+  codigoLocalTse: number
+  numeroZona: number
+  zonaId: number
 }
 
 interface MapaCalorIntraCidadeProps {
   pontos: PontoCalorLocal[]
   totalLocais: number
+  eleicaoId: string
+  uf: string
+  codigoIbge: string
 }
 
-// Mapa de calor DENTRO do município, por local de votação (feedback
-// de produto, 2026-08-17) — diferente do mapa por município do
-// Diagnóstico, este usa pontos geocodificados (endereço do local),
-// não polígonos. Cobertura parcial: só locais com coordenada
-// resolvida aparecem (ver importador/geocode_locais_votacao.py).
-export function MapaCalorIntraCidade({ pontos, totalLocais }: MapaCalorIntraCidadeProps) {
+// Marcadores por local de votação DENTRO do município (feedback de
+// produto, 2026-08-17): raio proporcional à raiz quadrada dos votos
+// (área do círculo ~ proporcional ao valor, mais honesto que raio
+// linear) + cor no mesmo gradiente de calor do mapa por município do
+// Diagnóstico (corCalor). CircleMarker usa raio em pixels — ao
+// contrário de Circle (raio em metros), continua legível com o mapa
+// afastado, sem precisar aproximar até nível de rua.
+export function MapaCalorIntraCidade({ pontos, totalLocais, eleicaoId, uf, codigoIbge }: MapaCalorIntraCidadeProps) {
+  const navigate = useNavigate()
+
   if (pontos.length === 0) {
     return (
       <EmptyState
@@ -63,8 +47,14 @@ export function MapaCalorIntraCidade({ pontos, totalLocais }: MapaCalorIntraCida
     )
   }
 
+  const votosMaximo = Math.max(1, ...pontos.map((p) => p.votos))
   const centroLat = pontos.reduce((soma, p) => soma + p.latitude, 0) / pontos.length
   const centroLng = pontos.reduce((soma, p) => soma + p.longitude, 0) / pontos.length
+
+  function raioBolha(votos: number): number {
+    const intensidade = Math.sqrt(votos / votosMaximo)
+    return RAIO_MIN + intensidade * (RAIO_MAX - RAIO_MIN)
+  }
 
   return (
     <div className="space-y-2">
@@ -72,13 +62,41 @@ export function MapaCalorIntraCidade({ pontos, totalLocais }: MapaCalorIntraCida
         center={[centroLat, centroLng]}
         zoom={13}
         scrollWheelZoom={false}
-        style={{ height: 360, width: '100%', borderRadius: 8 }}
+        style={{ height: 420, width: '100%', borderRadius: 8 }}
       >
         <TileLayer attribution={MAPTILER_ATTRIBUTION} url={MAPTILER_TILE_URL} />
-        <CamadaCalor pontos={pontos} />
+        {pontos.map((ponto) => (
+          <CircleMarker
+            key={ponto.localVotacaoId}
+            center={[ponto.latitude, ponto.longitude]}
+            radius={raioBolha(ponto.votos)}
+            pathOptions={{
+              fillColor: corCalor(ponto.votos / votosMaximo),
+              fillOpacity: 0.85,
+              color: '#ffffff',
+              weight: 1.5,
+            }}
+            eventHandlers={{
+              click: () =>
+                navigate(`/dashboard/${eleicaoId}/${uf}/municipio/${codigoIbge}/zona/${ponto.zonaId}/local/${ponto.localVotacaoId}`),
+            }}
+          >
+            <Tooltip direction="top" offset={[0, -4]}>
+              <div className="space-y-0.5 text-xs">
+                <p className="font-medium">{ponto.nomeLocal}</p>
+                {ponto.endereco && <p>{ponto.endereco}</p>}
+                <p>
+                  Zona {ponto.numeroZona} · Local {ponto.codigoLocalTse}
+                </p>
+                <p className="font-medium">{FORMATO_NUMERO.format(ponto.votos)} votos</p>
+              </div>
+            </Tooltip>
+          </CircleMarker>
+        ))}
       </MapContainer>
       <p className="text-xs text-muted-foreground">
-        {pontos.length} de {totalLocais} locais de votação com localização disponível.
+        {pontos.length} de {totalLocais} locais de votação com localização disponível. Tamanho e cor da bolha
+        indicam o volume de votos do candidato ali.
       </p>
     </div>
   )
