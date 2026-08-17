@@ -5,7 +5,7 @@ import type { Cargo, VotosValidosCargoMunicipio } from '@/types/domain'
 // GET /vw_votos_validos_cargo_municipio — total de votos válidos do
 // cargo por município (todos os candidatos somados), usado como
 // denominador da Participação Territorial (PT, doc 03 §2.2).
-export function useVotosValidosCargoMunicipio(eleicaoId: string, uf: string, cargo: Cargo) {
+export function useVotosValidosCargoMunicipio(eleicaoId: string, uf: string, cargo: Cargo, enabled = true) {
   return useQuery({
     queryKey: ['votos-validos-cargo-municipio', eleicaoId, uf, cargo],
     queryFn: async () => {
@@ -20,5 +20,6 @@ export function useVotosValidosCargoMunicipio(eleicaoId: string, uf: string, car
       if (error) throw error
       return data as VotosValidosCargoMunicipio[]
     },
+    enabled,
   })
 }

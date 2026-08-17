@@ -21,11 +21,23 @@ export interface TerritorioAnalise extends ClassificacaoTerritorio {
 // OportunidadesPage, para não duplicar a mesma junção. A agregação
 // pesada já veio pronta do banco (vw_resultado_candidato_municipio,
 // vw_votos_validos_cargo_*); aqui só combina números já pequenos.
-export function useAnaliseTerritorialCandidato(eleicaoId: string, uf: string, cargo: Cargo, sqCandidato: string) {
-  const candidatoQuery = useCandidato(sqCandidato)
-  const resultadosQuery = useResultadoCandidatoMunicipio(sqCandidato)
-  const votosValidosMunicipioQuery = useVotosValidosCargoMunicipio(eleicaoId, uf, cargo)
-  const votosValidosUfQuery = useVotosValidosCargoUf(eleicaoId, uf, cargo)
+//
+// `enabled` (padrão true) existe pro MunicipioPage: o candidato ali
+// vem do contexto global (useAppStore), que pode não estar definido
+// se o usuário chegou pela navegação antiga (Visão Geral → município,
+// sem nunca ter escolhido um candidato) — nesse caso as queries não
+// devem disparar.
+export function useAnaliseTerritorialCandidato(
+  eleicaoId: string,
+  uf: string,
+  cargo: Cargo,
+  sqCandidato: string,
+  enabled = true
+) {
+  const candidatoQuery = useCandidato(sqCandidato, enabled)
+  const resultadosQuery = useResultadoCandidatoMunicipio(sqCandidato, enabled)
+  const votosValidosMunicipioQuery = useVotosValidosCargoMunicipio(eleicaoId, uf, cargo, enabled)
+  const votosValidosUfQuery = useVotosValidosCargoUf(eleicaoId, uf, cargo, enabled)
 
   const isLoading =
     candidatoQuery.isLoading ||

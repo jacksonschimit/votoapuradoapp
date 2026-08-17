@@ -6,7 +6,7 @@ import type { Cargo, VotosValidosCargoUf } from '@/types/domain'
 // toda a UF (todos os candidatos somados), usado como denominador da
 // Contribuição Eleitoral (CE) e como território-pai de referência do
 // Quociente Locacional (QL, doc 03 §2.3/2.4).
-export function useVotosValidosCargoUf(eleicaoId: string, uf: string, cargo: Cargo) {
+export function useVotosValidosCargoUf(eleicaoId: string, uf: string, cargo: Cargo, enabled = true) {
   return useQuery({
     queryKey: ['votos-validos-cargo-uf', eleicaoId, uf, cargo],
     queryFn: async () => {
@@ -22,5 +22,6 @@ export function useVotosValidosCargoUf(eleicaoId: string, uf: string, cargo: Car
       if (error) throw error
       return data as VotosValidosCargoUf | null
     },
+    enabled,
   })
 }
