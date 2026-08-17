@@ -1,12 +1,13 @@
 import { useNavigate } from 'react-router-dom'
 import { CircleMarker, MapContainer, TileLayer, Tooltip } from 'react-leaflet'
-import { corCalor } from '@/lib/theme'
+import { corCalor, corToken } from '@/lib/theme'
 import { MAPTILER_ATTRIBUTION, MAPTILER_TILE_URL } from '@/lib/mapTiles'
 import { EmptyState } from '@/components/states/EmptyState'
 
 const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
 const RAIO_MIN = 7
 const RAIO_MAX = 24
+const RAIO_SEM_VOTOS = 5
 
 export interface PontoCalorLocal {
   localVotacaoId: number
@@ -35,6 +36,13 @@ interface MapaCalorIntraCidadeProps {
 // Diagnóstico (corCalor). CircleMarker usa raio em pixels — ao
 // contrário de Circle (raio em metros), continua legível com o mapa
 // afastado, sem precisar aproximar até nível de rua.
+//
+// Locais com 0 votos (feedback de produto, 2026-08-17): em vez de
+// preencher com cinza sólido, usa um círculo VAZADO (só contorno) —
+// a ponta mais clara do gradiente de calor já é bem perto de cinza em
+// municípios de poucos votos, então um cinza preenchido arriscava se
+// confundir com "poucos votos". Vazado nunca se confunde com uma
+// bolha preenchida, em qualquer escala.
 export function MapaCalorIntraCidade({ pontos, totalLocais, eleicaoId, uf, codigoIbge }: MapaCalorIntraCidadeProps) {
   const navigate = useNavigate()
 
@@ -65,38 +73,54 @@ export function MapaCalorIntraCidade({ pontos, totalLocais, eleicaoId, uf, codig
         style={{ height: 420, width: '100%', borderRadius: 8 }}
       >
         <TileLayer attribution={MAPTILER_ATTRIBUTION} url={MAPTILER_TILE_URL} />
-        {pontos.map((ponto) => (
-          <CircleMarker
-            key={ponto.localVotacaoId}
-            center={[ponto.latitude, ponto.longitude]}
-            radius={raioBolha(ponto.votos)}
-            pathOptions={{
-              fillColor: corCalor(ponto.votos / votosMaximo),
-              fillOpacity: 0.85,
-              color: '#ffffff',
-              weight: 1.5,
-            }}
-            eventHandlers={{
-              click: () =>
-                navigate(`/dashboard/${eleicaoId}/${uf}/municipio/${codigoIbge}/zona/${ponto.zonaId}/local/${ponto.localVotacaoId}`),
-            }}
-          >
-            <Tooltip direction="top" offset={[0, -4]}>
-              <div className="space-y-0.5 text-xs">
-                <p className="font-medium">{ponto.nomeLocal}</p>
-                {ponto.endereco && <p>{ponto.endereco}</p>}
-                <p>
-                  Zona {ponto.numeroZona} · Local {ponto.codigoLocalTse}
-                </p>
-                <p className="font-medium">{FORMATO_NUMERO.format(ponto.votos)} votos</p>
-              </div>
-            </Tooltip>
-          </CircleMarker>
-        ))}
+        {pontos.map((ponto) => {
+          const semVotos = ponto.votos === 0
+          return (
+            <CircleMarker
+              key={ponto.localVotacaoId}
+              center={[ponto.latitude, ponto.longitude]}
+              radius={semVotos ? RAIO_SEM_VOTOS : raioBolha(ponto.votos)}
+              pathOptions={
+                semVotos
+                  ? { fillOpacity: 0, color: corToken('--semantic-neutral'), weight: 1.5, opacity: 0.7 }
+                  : { fillColor: corCalor(ponto.votos / votosMaximo), fillOpacity: 0.85, color: '#ffffff', weight: 1.5 }
+              }
+              eventHandlers={{
+                click: () =>
+                  navigate(`/dashboard/${eleicaoId}/${uf}/municipio/${codigoIbge}/zona/${ponto.zonaId}/local/${ponto.localVotacaoId}`),
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -4]}>
+                <div className="space-y-0.5 text-xs">
+                  <p className="font-medium">{ponto.nomeLocal}</p>
+                  {ponto.endereco && <p>{ponto.endereco}</p>}
+                  <p>
+                    Zona {ponto.numeroZona} · Local {ponto.codigoLocalTse}
+                  </p>
+                  <p className="font-medium">
+                    {semVotos ? 'Nenhum voto do candidato' : `${FORMATO_NUMERO.format(ponto.votos)} votos`}
+                  </p>
+                </div>
+              </Tooltip>
+            </CircleMarker>
+          )
+        })}
       </MapContainer>
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="size-3 rounded-full" style={{ backgroundColor: corCalor(0.7) }} /> Com votos (tamanho e
+          cor = volume)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="size-3 rounded-full"
+            style={{ border: `1.5px solid ${corToken('--semantic-neutral')}` }}
+          />
+          Nenhum voto do candidato
+        </span>
+      </div>
       <p className="text-xs text-muted-foreground">
-        {pontos.length} de {totalLocais} locais de votação com localização disponível. Tamanho e cor da bolha
-        indicam o volume de votos do candidato ali.
+        {pontos.length} de {totalLocais} locais de votação com localização disponível.
       </p>
     </div>
   )
