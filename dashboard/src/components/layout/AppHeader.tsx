@@ -1,5 +1,5 @@
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, LogOut } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { useEleicoes } from '@/hooks/useEleicoes'
 import { supabase } from '@/lib/supabase'
@@ -31,11 +31,19 @@ import {
 export function AppHeader() {
   const { session } = useSession()
   const navigate = useNavigate()
+  const location = useLocation()
   const params = useParams<{ eleicaoId?: string; uf?: string }>()
   const { data: eleicoes } = useEleicoes(!!session)
   const resetContexto = useAppStore((s) => s.reset)
 
   const mostrarSeletorEleicao = !!params.eleicaoId && !!params.uf
+  // "Voltar" (doc 04: navegação sem afundar em drill-down sem saída) —
+  // usa o histórico do navegador, então funciona igual em qualquer
+  // ponto de entrada. Só a home (/dashboard) não mostra, por ser o
+  // topo da navegação. Fica no header pra não gastar altura extra
+  // numa barra própria — importante no mobile, que já tem a
+  // navegação inferior ocupando espaço.
+  const mostrarVoltar = location.pathname !== '/dashboard'
 
   function trocarEleicao(novoId: string | null) {
     if (!novoId || !params.uf) return
@@ -55,9 +63,16 @@ export function AppHeader() {
 
   return (
     <header className="flex items-center justify-between gap-2 border-b px-3 py-3 sm:gap-4 sm:px-4">
-      <Link to="/dashboard" className="shrink-0 text-sm font-semibold sm:text-base lg:hidden">
-        VotoApurado
-      </Link>
+      <div className="flex min-w-0 items-center gap-1">
+        {mostrarVoltar && (
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate(-1)} aria-label="Voltar">
+            <ArrowLeft className="size-4" />
+          </Button>
+        )}
+        <Link to="/dashboard" className="shrink-0 text-sm font-semibold sm:text-base lg:hidden">
+          VotoApurado
+        </Link>
+      </div>
 
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
         {mostrarSeletorEleicao && eleicoes && eleicoes.length > 0 && (
