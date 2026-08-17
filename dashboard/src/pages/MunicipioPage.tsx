@@ -7,6 +7,8 @@ import { useEleitoradoMunicipio } from '@/hooks/useEleitoradoMunicipio'
 import { useZonasPorMunicipio } from '@/hooks/useZonasPorMunicipio'
 import { useAnaliseTerritorialCandidato } from '@/hooks/useAnaliseTerritorialCandidato'
 import { useDominanciaZonasCandidato } from '@/hooks/useDominanciaZonasCandidato'
+import { useDominanciaLocaisCandidato } from '@/hooks/useDominanciaLocaisCandidato'
+import { useLocaisPorMunicipio } from '@/hooks/useLocaisPorMunicipio'
 import { NOMES_CARGO } from '@/types/domain'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/states/EmptyState'
 import { TerritoryBreadcrumb } from '@/components/context/TerritoryBreadcrumb'
+import { MapaCalorIntraCidade } from '@/components/municipio/MapaCalorIntraCidade'
 import { corToken } from '@/lib/theme'
 
 const FORMATO_NUMERO = new Intl.NumberFormat('pt-BR')
@@ -60,6 +63,11 @@ export function MunicipioPage() {
     sqCandidato ?? '',
     temCandidato ? cargo : null
   )
+  const { data: locais, isLoading: carregandoLocais } = useLocaisPorMunicipio(eleicaoId ?? '', codigoIbge ?? '')
+  const { data: dominanciaLocais, isLoading: carregandoDominanciaLocais } = useDominanciaLocaisCandidato(
+    sqCandidato ?? '',
+    temCandidato ? cargo : null
+  )
 
   const territorioDoMunicipio = territorios.find((t) => t.codigo_municipio === Number(codigoIbge))
   const codigosZonasDoMunicipio = useMemo(() => new Set((zonas ?? []).map((z) => z.id)), [zonas])
@@ -71,6 +79,19 @@ export function MunicipioPage() {
     .slice()
     .sort((a, b) => b.qtde_votos - a.qtde_votos)
     .map((z) => ({ ...z, zonaLabel: `Zona ${z.numero_zona}` }))
+
+  const votosPorLocal = useMemo(
+    () => new Map((dominanciaLocais ?? []).map((d) => [d.local_votacao_id, d.qtde_votos])),
+    [dominanciaLocais]
+  )
+  const pontosCalor = (locais ?? [])
+    .filter((l) => l.latitude !== null && l.longitude !== null && (votosPorLocal.get(l.id) ?? 0) > 0)
+    .map((l) => ({
+      latitude: l.latitude!,
+      longitude: l.longitude!,
+      votos: votosPorLocal.get(l.id) ?? 0,
+      nomeLocal: l.nome_local,
+    }))
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">
@@ -170,6 +191,21 @@ export function MunicipioPage() {
                   )}
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {temCandidato && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Mapa de calor por local de votação</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {carregandoLocais || carregandoDominanciaLocais ? (
+              <Skeleton className="h-[360px] w-full" />
+            ) : (
+              <MapaCalorIntraCidade pontos={pontosCalor} totalLocais={locais?.length ?? 0} />
             )}
           </CardContent>
         </Card>
