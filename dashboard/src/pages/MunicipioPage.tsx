@@ -86,7 +86,7 @@ export function MunicipioPage() {
   )
   const numeroZonaPorId = useMemo(() => new Map((zonas ?? []).map((z) => [z.id, z.numero_zona])), [zonas])
   const pontosCalor = (locais ?? [])
-    .filter((l) => l.latitude !== null && l.longitude !== null && (votosPorLocal.get(l.id) ?? 0) > 0)
+    .filter((l) => l.latitude !== null && l.longitude !== null)
     .map((l) => ({
       localVotacaoId: l.id,
       latitude: l.latitude!,
