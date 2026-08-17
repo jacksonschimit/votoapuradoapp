@@ -1,12 +1,9 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import { useAppStore } from '@/store/useAppStore'
 import { useSession } from '@/hooks/useSession'
 import { useMinhasPermissoes } from '@/hooks/useMinhasPermissoes'
 import type { Cargo } from '@/types/domain'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { buttonVariants } from '@/components/ui/button'
 import { EmptyState } from '@/components/states/EmptyState'
 import { PermissionState } from '@/components/states/PermissionState'
 
@@ -21,35 +18,22 @@ interface RequireAnalysisContextProps {
   children: (contexto: ContextoAnalise) => ReactNode
 }
 
-// Guarda de sessão + permissão + contexto analítico completo (doc 04
-// §3): sessão logada, algum escopo liberado, e eleição/cargo/candidato
-// escolhidos na AnalysisContextBar. Compartilhado por toda tela que
-// depende do contexto global do store (Diagnóstico, Oportunidades,
-// futuramente Cenários/Comparativo) — evita duplicar esta cascata de
-// estados em cada uma.
+// Guarda de permissão + contexto analítico completo (doc 04 §3): algum
+// escopo liberado, e eleição/cargo/candidato escolhidos na
+// AnalysisContextBar. A sessão em si já é garantida pelo AppShell
+// (redireciona pro /login antes de montar qualquer rota) — este
+// componente só cobre o que vem depois disso. Compartilhado por toda
+// tela que depende do contexto global do store (Diagnóstico,
+// Oportunidades, Cenários, Comparativo).
 export function RequireAnalysisContext({ children }: RequireAnalysisContextProps) {
-  const { session, carregando: carregandoSessao } = useSession()
+  const { session } = useSession()
   const { data: permissoes, isLoading: carregandoPermissoes } = useMinhasPermissoes(!!session)
   const { eleicaoId, uf, cargo, candidatoPrincipalId } = useAppStore()
 
-  if (carregandoSessao || (session && carregandoPermissoes)) {
+  if (carregandoPermissoes) {
     return (
       <div className="mx-auto max-w-2xl p-8">
         <Skeleton className="h-40" />
-      </div>
-    )
-  }
-
-  if (!session) {
-    return (
-      <div className="mx-auto max-w-md space-y-4 p-8 text-center">
-        <Alert>
-          <AlertTitle>Você precisa entrar</AlertTitle>
-          <AlertDescription>Faça login para acessar o diagnóstico eleitoral.</AlertDescription>
-        </Alert>
-        <Link to="/login" className={buttonVariants()}>
-          Ir para o login
-        </Link>
       </div>
     )
   }
@@ -76,9 +60,5 @@ export function RequireAnalysisContext({ children }: RequireAnalysisContextProps
     )
   }
 
-  return (
-    <>
-      {children({ eleicaoId: String(eleicaoId), uf, cargo, sqCandidato: String(candidatoPrincipalId) })}
-    </>
-  )
+  return <>{children({ eleicaoId: String(eleicaoId), uf, cargo, sqCandidato: String(candidatoPrincipalId) })}</>
 }
