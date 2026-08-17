@@ -14,6 +14,9 @@ def refresh_materialized_views(conn):
         cur.execute("refresh materialized view public.mv_resultado_candidato_municipio")
         cur.execute("refresh materialized view public.mv_resultado_candidato_local")
         cur.execute("refresh materialized view public.mv_resultado_candidato_uf")
+        cur.execute("refresh materialized view public.mv_dominancia_municipio")
+        cur.execute("refresh materialized view public.mv_votos_validos_cargo_municipio")
+        cur.execute("refresh materialized view public.mv_votos_validos_cargo_uf")
     conn.commit()
 
 
